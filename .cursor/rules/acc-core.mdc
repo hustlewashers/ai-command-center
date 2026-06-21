@@ -1,0 +1,48 @@
+---
+description: AI Command Center core operating rules for all agent sessions
+alwaysApply: true
+---
+
+# AI Command Center Core Rules
+
+You are working on the **AI Command Center** — the core platform for orchestrating requests, work, approvals, and outputs across departments.
+
+## Platform Boundaries
+
+- The Command Center is the **primary system**. GovCon and other verticals are **implementation domains only** — they extend entities, never replace them.
+- Canonical entity definitions live in `docs/system-entities.md`. Do not invent parallel entity names.
+- Phase 0 is documentation and operating structure. Do not scaffold apps, add frameworks, or create database schemas unless explicitly instructed.
+
+## Implementation Rules
+
+1. **Inspect before changing.** Read relevant docs and code before editing.
+2. **Do not modify unrelated files.** Keep diffs scoped to the task.
+3. **Smallest correct change.** Prefer minimal, focused edits.
+4. **Explain planned changes first.** State intent before making edits.
+5. **Run validation before completion.** Lint, test, or verify docs as applicable.
+6. **Report files changed.** List every file touched.
+7. **Report risks.** Call out gaps, assumptions, and downstream impact.
+8. **Report next recommended step.** End with one clear follow-up action.
+9. **Do not change architecture** unless explicitly instructed.
+10. **GovCon is a domain, not the platform.** Domain logic belongs in domain extensions, not core docs or shared layers.
+
+## Required Completion Report
+
+After substantive work, report:
+
+1. Summary
+2. Files Changed
+3. Validation
+4. Risks
+5. Next Step
+
+## Document Map
+
+| Document | Purpose |
+|----------|---------|
+| `docs/system-entities.md` | Canonical entity model (source of truth) |
+| `docs/system-overview.md` | Platform purpose and operating flow |
+| `docs/work-packet-template.md` | Work Packet authoring template |
+| `docs/department-map.md` | Department responsibilities and routing |
+| `docs/approval-rules.md` | Approval gates and policies |
+| `docs/tool-stack.md` | Planned integrations and tool boundaries |
