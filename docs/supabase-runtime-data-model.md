@@ -255,9 +255,9 @@ Tool IDs reference [tool-stack.md](tool-stack.md).
 | | |
 |---|---|
 | **Purpose** | Deliverables produced by tasks. Maps to [system-entities.md](system-entities.md) §9 Output. |
-| **Primary fields** | `id`, `organization_id`, `title`, `output_type` (`report`, `artifact`, `message`, `data`, `other`), `task_id`, `project_id`, `content`, `storage_path`, `produced_at`, `status`, `delivered_at` |
-| **Relationships** | Belongs to `tasks`, `projects`; may require `approvals`; may reference `research_assets` via junction; may be subject of `knowledge_records` |
-| **Ownership department** | Task's department; Operations for external delivery |
+| **Primary fields** | `id`, `organization_id`, `department_id`, `task_id`, `project_id`, `title`, `output_type` (`report`, `artifact`, `message`, `data`, `other`), `content`, `storage_path`, `produced_at`, `status`, `delivered_at` — `department_id` is a direct FK to `departments` (not derived via `task_id`); see [phase-e-knowledge-output-layer-migration-plan.md](phase-e-knowledge-output-layer-migration-plan.md) §2 for rationale |
+| **Relationships** | Belongs to `tasks`, `projects`, `departments` (direct FK); may require `approvals`; may reference `research_assets` via junction; may be subject of `knowledge_records` |
+| **Ownership department** | Carried as a direct `department_id` column on `outputs` for RLS, routing, audit, and delivery accountability — must match the owning department of the parent task (application-enforced) |
 
 #### `knowledge_records`
 
@@ -265,8 +265,17 @@ Tool IDs reference [tool-stack.md](tool-stack.md).
 |---|---|
 | **Purpose** | Universal memory and knowledge layer — curated synthesis, summaries, constraints, lessons, and agent-readable context attachable to any core entity. Maps to [system-entities.md](system-entities.md) §14 Knowledge Record. Runtime table name: `knowledge_records`. |
 | **Primary fields** | `id`, `organization_id`, `project_id` (optional), `subject_type` (`project`, `request`, `task`, `work_packet`, `decision`, `research_asset`, `output`), `subject_id`, `record_type`, `title`, `summary`, `content`, `source`, `confidence`, `created_by`, `created_at`, `updated_at`, `status` |
-| **Relationships** | Polymorphic belongs to `projects`, `requests`, `tasks`, `work_packets`, `decisions`, `research_assets`, or `outputs` via `subject_type` + `subject_id`; optional `project_id` for scope anchoring; may be produced from `execution_logs` |
+| **Relationships** | Polymorphic belongs to a primary subject (`projects`, `requests`, `tasks`, `work_packets`, `decisions`, `research_assets`, or `outputs`) via `subject_type` + `subject_id`; optional `project_id` for scope anchoring; may be produced from `execution_logs`; may have secondary related entities via `knowledge_record_links` |
 | **Ownership department** | Platform (schema); department of referenced subject entity (content) |
+
+#### `knowledge_record_links` (support)
+
+| | |
+|---|---|
+| **Purpose** | Secondary associative-memory links from one `knowledge_records` row to related entities used for traceability and related-context retrieval. The primary subject remains on `knowledge_records.subject_type` + `subject_id`; this table stores additional relationships. |
+| **Primary fields** | `id`, `organization_id`, `knowledge_record_id`, `linked_entity_type` (`project`, `request`, `task`, `work_packet`, `decision`, `research_asset`, `output`, `execution_log`), `linked_entity_id`, `link_type` (`source`, `supports`, `derived_from`, `related`, `supersedes`, `other`), `linked_at`, `notes` |
+| **Relationships** | Belongs to `knowledge_records`; polymorphic secondary link to a related core or audit entity via `linked_entity_type` + `linked_entity_id` |
+| **Ownership department** | Inherits from parent `knowledge_records` row and linked target; policies must avoid widening access beyond either side |
 
 > **Distinction:** `research_assets` store raw inputs. `outputs` store deliverables. `knowledge_records` store curated, retrievable context agents use across sessions — scoped to whichever entity is most relevant. `execution_logs` remain the authoritative action audit.
 
@@ -305,9 +314,10 @@ These are not canonical entities but are required to model many-to-many relation
 | `task_research_assets` | Links `tasks` ↔ `research_assets` |
 | `work_packet_research_assets` | Links `work_packets` ↔ `research_assets` |
 | `output_research_assets` | Links `outputs` ↔ `research_assets` |
+| `knowledge_record_links` | Links `knowledge_records` → secondary related entities |
 | `blocker_research_assets` | Links `blockers` ↔ `research_assets` |
 
-Each junction row: `organization_id`, both FK ids, `linked_at`, optional `notes`.
+Each research-asset junction row: `organization_id`, both FK ids, `linked_at`, optional `notes`. `knowledge_record_links` follows the same tenant/link timestamp pattern but uses a polymorphic secondary target (`linked_entity_type` + `linked_entity_id`) instead of a second fixed FK.
 
 ---
 
@@ -324,6 +334,7 @@ erDiagram
     departments ||--o{ projects : owns
     departments ||--o{ tool_profiles : configures
     departments ||--o{ users : assigns
+    departments ||--o{ outputs : owns
 
     projects ||--o{ tasks : contains
     projects ||--o{ work_packets : contains
@@ -337,6 +348,7 @@ erDiagram
     knowledge_records }o--|| decisions : may_reference
     knowledge_records }o--|| research_assets : may_reference
     knowledge_records }o--|| outputs : may_reference
+    knowledge_records ||--o{ knowledge_record_links : has_secondary_links
 
     requests ||--o{ tasks : spawns
     requests }o--o| departments : routed_to
@@ -383,16 +395,18 @@ erDiagram
 | `approvals` | decision, task, work_packet, output | N:1 | `subject_type` + `subject_id` (polymorphic) |
 | `blockers` | task, work_packet, project | N:1 | `blocked_entity_type` + `blocked_entity_id` (polymorphic) |
 | `decisions` | `tasks` | N:1 | `task_id` |
-| `outputs` | `tasks`, `projects` | N:1 each | `task_id`, `project_id` |
+| `outputs` | `tasks`, `projects`, `departments` | N:1 each | `task_id`, `project_id`, `department_id` (direct FK; not derived via `task_id`) |
 | `research_assets` | `projects` | N:0..1 | `project_id` |
 | `knowledge_records` | project, request, task, work_packet, decision, research_asset, output | N:1 | `subject_type` + `subject_id` (polymorphic) |
 | `knowledge_records` | `projects` | N:0..1 | `project_id` (optional scope anchor) |
+| `knowledge_record_links` | `knowledge_records` | N:1 | `knowledge_record_id` |
+| `knowledge_record_links` | project, request, task, work_packet, decision, research_asset, output, execution_log | N:1 | `linked_entity_type` + `linked_entity_id` (polymorphic secondary link) |
 | `users` | `organizations`, `departments` | N:1 | `organization_id`, `department_id` |
 | `audit_events` | `organizations` | N:1 | `organization_id` |
 
 ### Polymorphic Pattern Notes
 
-`work_packets`, `execution_logs`, `approvals`, `blockers`, and `knowledge_records` use `*_type` + `*_id` pairs matching the conceptual model in [system-entities.md](system-entities.md). Application logic (or Postgres check constraints in a future migration) must validate that referenced rows exist and belong to the same `organization_id`.
+`work_packets`, `execution_logs`, `approvals`, `blockers`, `knowledge_records`, and `knowledge_record_links` use `*_type` + `*_id` pairs matching the conceptual model in [system-entities.md](system-entities.md). Application logic (or Postgres check constraints in a future migration) must validate that referenced rows exist and belong to the same `organization_id`. For `knowledge_records`, the pair is the primary subject; for `knowledge_record_links`, the pair is a secondary related entity used for associative retrieval and traceability.
 
 ---
 
@@ -516,10 +530,10 @@ Row Level Security enforces the governance model from [approval-rules.md](approv
 | `approvals` | Requester and designated `approver_user_id` read; only approver updates status to `approved`/`rejected` |
 | `decisions` | Department of parent task reads; agents insert `proposed`; leads confirm |
 | `blockers` | Department of blocked entity reads/writes |
-| `outputs` | Department reads; external delivery requires `approvals.status = approved` before status → `delivered` |
+| `outputs` | Department-scoped read/write via direct `department_id` column (no join through `tasks` required); org admin reads all; external delivery requires `approvals.status = approved` before status → `delivered` |
 | `execution_logs` | Insert by agents and users in context department; no update/delete for non-admin |
 | `audit_events` | Platform admin read only; system insert only |
-| `research_assets`, `knowledge_records` | Department of referenced subject reads; Research department manages `research_assets` quality; agents insert `knowledge_records` for assigned tasks; department lead archives or supersedes |
+| `research_assets`, `knowledge_records`, `knowledge_record_links` | Department of referenced subject reads; Research department manages `research_assets` quality; agents insert `knowledge_records` and secondary links for assigned tasks; department lead archives or supersedes. `knowledge_record_links` must inherit access from the parent `knowledge_records` row and must not expose linked targets outside the caller's allowed department or task context. |
 | `tool_profiles` | All org members read; Platform lead writes |
 
 ### Approval Enforcement
