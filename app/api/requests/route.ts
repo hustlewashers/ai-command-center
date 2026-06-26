@@ -1,0 +1,71 @@
+import { createClient } from '@/lib/supabase/server'
+import { resolveUserContext } from '@/lib/auth/context'
+import { errorResponse, ok, createError } from '@/lib/errors'
+import { validateCreateBody } from '@/lib/requests/validate'
+
+const SELECT_COLS = 'id, organization_id, source, intent, status, submitted_at, submitted_by_user_id, routed_department_id, project_id, metadata, created_at, updated_at'
+
+// GET /api/requests
+// Returns all RLS-visible requests for the caller's org (org-wide SELECT per 009).
+// read_only callers see requests but cannot create them.
+export async function GET() {
+  try {
+    const supabase = await createClient()
+    await resolveUserContext(supabase)
+
+    const { data, error } = await supabase
+      .from('requests')
+      .select(SELECT_COLS)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) throw new Error(error.message)
+    return ok(data ?? [])
+  } catch (err) {
+    return errorResponse(err)
+  }
+}
+
+// POST /api/requests
+// Creates a new request at status='received'.
+// organization_id and submitted_by_user_id are always derived from context — never client-supplied.
+// status is always forced to 'received' — client cannot set initial status.
+// read_only: forbidden (org-wide SELECT makes requests visible to them, so they know
+//   requests exist — this is a visible-but-not-permitted action, not an existence leak).
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+    const context = await resolveUserContext(supabase)
+
+    if (context.role === 'read_only') {
+      throw createError('forbidden', 'read_only role cannot create requests')
+    }
+
+    const body = await request.json().catch(() => null)
+    const validated = validateCreateBody(body)
+
+    const { data, error } = await supabase
+      .from('requests')
+      .insert({
+        organization_id:      context.organizationId, // always context — never client
+        submitted_by_user_id: context.userId,         // self-pin
+        status:               'received',             // always received on create
+        source:               validated.source,
+        intent:               validated.intent,
+        routed_department_id: validated.routed_department_id,
+        project_id:           validated.project_id,
+        metadata:             validated.metadata,
+      })
+      .select(SELECT_COLS)
+      .single()
+
+    if (error) {
+      if (error.code === '23514') throw createError('validation', error.message)
+      throw new Error(error.message)
+    }
+
+    return ok(data, 201)
+  } catch (err) {
+    return errorResponse(err)
+  }
+}

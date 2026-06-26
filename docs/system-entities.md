@@ -534,16 +534,18 @@ Represents an impediment that prevents a task, work packet, or project from prog
 |-------|-------------|
 | `id` | Unique identifier |
 | `description` | What is blocking progress |
-| `blocked_entity_type` | `task`, `work_packet`, or `project` |
+| `blocked_entity_type` | `task` or `work_packet` (see note below) |
 | `blocked_entity_id` | Identifier of the blocked entity |
 | `severity` | Impact level (low, medium, high, critical) |
 | `reported_by` | Actor who raised the blocker |
 | `reported_at` | Timestamp reported |
 | `status` | Current lifecycle state |
 
+> **Deployed schema note:** The `blocked_entity_type` column is constrained by a database `CHECK` to `('task', 'work_packet')` only (migration `011_governance_layer.sql`). Blocking a `project` entity is intentionally deferred and is not valid in the current deployed schema. This conceptual model will be updated when project-level blockers are implemented.
+
 ### Relationships
 
-- **Blocks** one **Task**, **Work Packet**, or **Project**
+- **Blocks** one **Task** or **Work Packet** (project-level blocking is deferred; see note above)
 - **May require** one **Approval** or **Decision** to resolve
 - **May reference** zero or more **Research Assets** as supporting context
 - **Generates** **Execution Log** entries on creation and resolution

@@ -206,12 +206,17 @@ GovCon-specific Work Packet fields may indicate compliance tier, which determine
 
 ---
 
-## Phase 0 Boundaries
+## Implementation State
 
-These rules are **policy documentation only**:
+The governance tables that back these rules are **fully deployed**:
 
-- No approval workflow engine is implemented
-- No Supabase tables or notification integrations exist
-- Agents and humans follow these rules manually until APP 5+ runtime implementation
+- `approvals`, `decisions`, and `blockers` are live in the Supabase runtime (migrations `011`, `013`, `017`).
+- Row Level Security is implemented and enforced for all three tables.
+- The database records approval rows, enforces `category IN ('a', 'b')`, enforces the `decided_at` paired invariant, and restricts role-based INSERT/UPDATE access per the policies in `013` and `017`.
 
-When the runtime is built, Approval rules here map directly to [system-entities.md](system-entities.md) §7 and Tool Profile constraints in [tool-stack.md](tool-stack.md).
+**What the application layer still owns:**
+- Orchestrating the approval request → resolution lifecycle (creating approval rows, routing to the right approver, surfacing pending gates to the UI).
+- Enforcing Layer 5 approval gates before privileged transitions (output delivery, work packet execution start, schedule creation, high-risk decision confirmation, `won_t_fix` override) — the database does not block these transitions at the SQL level.
+- The expiry sweep (transitioning `pending → expired` after 48 h) is a service-role scheduled job; authenticated sessions cannot set `status = 'expired'`.
+
+These rules map directly to [system-entities.md](system-entities.md) §7, the deployed schema in migrations `011`/`013`/`017`, and the Layer 5 gate contract in the G-phase API plans.
