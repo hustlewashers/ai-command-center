@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { href: '/approvals', label: 'Approvals' },
   { href: '/outputs', label: 'Outputs' },
   { href: '/blockers', label: 'Blockers' },
+  { href: '/background-jobs', label: 'Jobs' },
 ]
 
 export default async function AppNav() {
