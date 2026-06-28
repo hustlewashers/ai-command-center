@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveUserContext } from '@/lib/auth/context'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { listWorkflows } from '@/lib/workflows/registry'
 import type { JobStatus } from '@/types/jobs'
 
 const JOB_COLS = [
@@ -67,6 +68,8 @@ const s = {
   errText:   { color: '#dc2626', fontSize: 12, maxWidth: 300, wordBreak: 'break-all' as const },
   empty:     { padding: 32, textAlign: 'center' as const, color: '#9ca3af' },
 }
+
+const workflows = listWorkflows()
 
 export default async function BackgroundJobsPage() {
   const supabase = await createClient()
@@ -149,6 +152,23 @@ export default async function BackgroundJobsPage() {
           Failed to load jobs: {jobsRes.error.message}
         </p>
       )}
+
+      {/* In-code workflow registry */}
+      <div style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: '#374151', marginBottom: 10 }}>
+          Workflow Registry ({workflows.length} in-code)
+        </h2>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
+          {workflows.map(wf => (
+            <div key={wf.id} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '10px 14px', minWidth: 220 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>{wf.name}</div>
+              <div style={{ fontSize: 11, color: '#6b7280', margin: '3px 0' }}>{wf.id}</div>
+              <div style={{ fontSize: 12, color: '#374151' }}>{wf.description}</div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{wf.steps.length} steps</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {jobs.length === 0 ? (
         <div style={s.empty}>No background jobs found.</div>
