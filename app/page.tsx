@@ -164,6 +164,12 @@ export default async function DashboardPage({
     rejectedDecResult,
     deptResult,
     projectResult,
+    wfPendingResult,
+    wfRunningResult,
+    wfCompletedResult,
+    wfFailedResult,
+    wfFailedIdsResult,
+    wfParentIdsResult,
   ] = await Promise.all([
     supabase.from('requests')
       .select('id, intent, status, submitted_at', { count: 'exact' })
@@ -230,6 +236,14 @@ export default async function DashboardPage({
     supabase.from('departments').select('id, name').order('name', { ascending: true }).limit(200),
 
     supabase.from('projects').select('id, name').order('name', { ascending: true }).limit(200),
+
+    // Workflow Health (Sprint 5.8)
+    supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+    supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'running'),
+    supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+    supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'failed'),
+    supabase.from('workflow_runs').select('id').eq('status', 'failed').limit(500),
+    supabase.from('workflow_runs').select('parent_run_id').not('parent_run_id', 'is', null).limit(1000),
   ])
 
   // Extract with safe fallbacks
@@ -249,6 +263,26 @@ export default async function DashboardPage({
   const rejDecisions = (rejectedDecResult.data ?? []) as RejDecRow[]
   const depts       = (deptResult.data    ?? []) as DeptRow[]
   const projects    = (projectResult.data ?? []) as ProjectRow[]
+
+  // Workflow Health (Sprint 5.8) — counts + "recovery needed" = failed runs not
+  // yet superseded by a recovery child run (leaf failures).
+  const wfFailedIds   = (wfFailedIdsResult.data ?? []) as { id: string }[]
+  const wfParentIds   = (wfParentIdsResult.data ?? []) as { parent_run_id: string | null }[]
+  const recoveredSet  = new Set(wfParentIds.map(p => p.parent_run_id).filter(Boolean) as string[])
+  const wfHealth = {
+    pending:        wfPendingResult.count   ?? 0,
+    running:        wfRunningResult.count   ?? 0,
+    completed:      wfCompletedResult.count ?? 0,
+    failed:         wfFailedResult.count    ?? 0,
+    recoveryNeeded: wfFailedIds.filter(r => !recoveredSet.has(r.id)).length,
+  }
+  const workflowHealthCards = [
+    { label: 'Pending',        value: wfHealth.pending,        href: '/workflow-runs?status=pending',   color: '#6b7280' },
+    { label: 'Running',        value: wfHealth.running,        href: '/workflow-runs?status=running',   color: '#2563eb' },
+    { label: 'Failed',         value: wfHealth.failed,         href: '/workflow-runs?status=failed',    color: '#dc2626' },
+    { label: 'Completed',      value: wfHealth.completed,      href: '/workflow-runs?status=completed', color: '#16a34a' },
+    { label: 'Recovery Needed', value: wfHealth.recoveryNeeded, href: '/workflow-runs?status=failed',    color: '#d97706' },
+  ]
 
   // Build alerts list (deduped: one entry per approval count, individual rows for others)
   type AlertItem = { key: string; kind: string; text: string; href: string }
@@ -367,6 +401,21 @@ export default async function DashboardPage({
         <KpiCard label="Blockers"       value={blockers.n}  href="/blockers"       color={critCount > 0 ? '#dc2626' : '#6b7280'} sub={critCount > 0 ? `${critCount} critical` : 'open'} />
         <KpiCard label="Agent Activity" value={activity.n}  href="/agent-activity" color="#0891b2" sub="recent"                                              />
         <KpiCard label="Exec Logs"      value={execLogs.n}  href="/execution-logs" color="#6b7280" sub="recent"                                              />
+      </div>
+
+      {/* Workflow Health (Sprint 5.8) */}
+      <h2 style={s.sectionTitle}>Workflow Health</h2>
+      <div style={{ ...s.kpiRow, gridTemplateColumns: 'repeat(5, 1fr)' }}>
+        {workflowHealthCards.map(c => (
+          <KpiCard
+            key={c.label}
+            label={c.label}
+            value={c.value}
+            href={c.href}
+            color={c.color}
+            sub="workflow runs"
+          />
+        ))}
       </div>
 
       {/* Active Alerts — only rendered when there is something to show */}

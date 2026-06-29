@@ -39,7 +39,14 @@ function durationStr(startedAt: string | null, endedAt: string | null): string {
   return `${(ms / 60000).toFixed(1)}m`
 }
 
-export default async function WorkflowRunsPage() {
+const VALID_STATUSES: WorkflowRunStatus[] =
+  ['pending', 'running', 'completed', 'failed', 'cancelled', 'resuming']
+
+export default async function WorkflowRunsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>
+}) {
   const supabase = await createClient()
   let context
   try {
@@ -48,13 +55,21 @@ export default async function WorkflowRunsPage() {
     redirect('/login')
   }
 
+  const sp = await searchParams
+  const statusFilter = (VALID_STATUSES as string[]).includes(sp.status ?? '')
+    ? (sp.status as WorkflowRunStatus)
+    : null
+
+  let runsQuery = supabase.from('workflow_runs').select(RUN_LIST_COLS)
+    .order('created_at', { ascending: false }).limit(100)
+  if (statusFilter) runsQuery = runsQuery.eq('status', statusFilter)
+
   const [
     runsRes,
     pendingRes, runningRes, completedRes,
     failedRes, cancelledRes, resumingRes,
   ] = await Promise.all([
-    supabase.from('workflow_runs').select(RUN_LIST_COLS)
-      .order('created_at', { ascending: false }).limit(100),
+    runsQuery,
     supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'running'),
     supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
@@ -66,12 +81,12 @@ export default async function WorkflowRunsPage() {
   const runs = (runsRes.data ?? []) as unknown as WorkflowRunSummary[]
 
   const summaryCards = [
-    { label: 'Pending',   value: pendingRes.count   ?? 0, color: STATUS_COLOR.pending   },
-    { label: 'Running',   value: runningRes.count   ?? 0, color: STATUS_COLOR.running   },
-    { label: 'Completed', value: completedRes.count ?? 0, color: STATUS_COLOR.completed },
-    { label: 'Failed',    value: failedRes.count    ?? 0, color: STATUS_COLOR.failed    },
-    { label: 'Cancelled', value: cancelledRes.count ?? 0, color: STATUS_COLOR.cancelled },
-    { label: 'Resuming',  value: resumingRes.count  ?? 0, color: STATUS_COLOR.resuming  },
+    { label: 'Pending',   status: 'pending'   as const, value: pendingRes.count   ?? 0, color: STATUS_COLOR.pending   },
+    { label: 'Running',   status: 'running'   as const, value: runningRes.count   ?? 0, color: STATUS_COLOR.running   },
+    { label: 'Completed', status: 'completed' as const, value: completedRes.count ?? 0, color: STATUS_COLOR.completed },
+    { label: 'Failed',    status: 'failed'    as const, value: failedRes.count    ?? 0, color: STATUS_COLOR.failed    },
+    { label: 'Cancelled', status: 'cancelled' as const, value: cancelledRes.count ?? 0, color: STATUS_COLOR.cancelled },
+    { label: 'Resuming',  status: 'resuming'  as const, value: resumingRes.count  ?? 0, color: STATUS_COLOR.resuming  },
   ]
 
   const s = {
@@ -94,15 +109,25 @@ export default async function WorkflowRunsPage() {
       <div style={s.header}>
         <Link href="/" style={s.back}>← Home</Link>
         <h1 style={s.h1}>Workflow Runs</h1>
+        {statusFilter && (
+          <span style={{ fontSize: 12, color: '#374151' }}>
+            filtered: <b>{statusFilter}</b>{' '}
+            <Link href="/workflow-runs" style={{ color: '#2563eb', textDecoration: 'none' }}>clear</Link>
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9ca3af' }}>{context.role}</span>
       </div>
 
       <div style={s.cards}>
         {summaryCards.map(c => (
-          <div key={c.label} style={s.card}>
+          <Link
+            key={c.label}
+            href={`/workflow-runs?status=${c.status}`}
+            style={{ ...s.card, textDecoration: 'none', color: 'inherit', outline: statusFilter === c.status ? `2px solid ${c.color}` : 'none' }}
+          >
             <div style={{ ...s.cardVal, color: c.color }}>{c.value}</div>
             <div style={s.cardLabel}>{c.label}</div>
-          </div>
+          </Link>
         ))}
       </div>
 

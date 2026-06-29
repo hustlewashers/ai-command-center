@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveUserContext } from '@/lib/auth/context'
 import { errorResponse, ok, createError } from '@/lib/errors'
 import { validateCreateBody } from '@/lib/requests/validate'
+import { triggerRequestWorkflow } from '@/lib/workflows/triggers'
 
 const SELECT_COLS = 'id, organization_id, source, intent, status, submitted_at, submitted_by_user_id, routed_department_id, project_id, metadata, created_at, updated_at'
 
@@ -64,7 +65,18 @@ export async function POST(request: Request) {
       throw new Error(error.message)
     }
 
-    return ok(data, 201)
+    // Live workflow trigger (Sprint 5.8): enqueue request_to_task AFTER the
+    // request is durably persisted. Non-fatal — a trigger failure must never
+    // roll back or fail the request creation itself.
+    let workflow: Awaited<ReturnType<typeof triggerRequestWorkflow>> | null = null
+    try {
+      workflow = await triggerRequestWorkflow((data as { id: string }).id, context)
+    } catch (triggerErr) {
+      console.warn('[requests] workflow trigger failed (request still created):',
+        triggerErr instanceof Error ? triggerErr.message : String(triggerErr))
+    }
+
+    return ok({ ...(data as Record<string, unknown>), workflow }, 201)
   } catch (err) {
     return errorResponse(err)
   }

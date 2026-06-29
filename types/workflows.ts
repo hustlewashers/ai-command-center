@@ -12,10 +12,18 @@ export interface WorkflowStepDefinition {
   params?: Record<string, unknown>
 }
 
+// Entity kinds that can trigger a workflow (Sprint 5.8). Mirrors
+// execution_logs.context_type / workflow_runs.trigger_entity_type vocabulary.
+export type WorkflowTriggerEntityType = 'request' | 'task' | 'approval'
+
 export interface WorkflowDefinition {
   id: string
   name: string
   description: string
+  // Which business entities may trigger this workflow. A definition with no
+  // triggers can still be enqueued directly (e.g. dev/manual) but is not
+  // reachable from a business-action trigger. Kept in code for now.
+  triggers?: WorkflowTriggerEntityType[]
   steps: WorkflowStepDefinition[]
 }
 
