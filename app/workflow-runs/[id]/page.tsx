@@ -9,6 +9,10 @@ import type {
   WorkflowStepRunStatus,
 } from '@/types/workflow-runs'
 import type { ExecutionLogRow } from '@/types/execution-logs'
+import { getRecoveryEligibility } from '@/lib/workflows/recovery'
+import WorkflowRecoveryActions from './WorkflowRecoveryActions'
+
+const RECOVERY_ROLES = new Set(['org_admin', 'department_lead'])
 
 const RUN_DETAIL_COLS = [
   'id', 'organization_id', 'workflow_id', 'workflow_version',
@@ -114,6 +118,11 @@ export default async function WorkflowRunDetailPage({
   const linkedTaskId = typeof acc.task_id === 'string' ? acc.task_id : null
   const linkedWpId   = typeof acc.work_packet_id === 'string' ? acc.work_packet_id : null
 
+  // Recovery affordances (Sprint 5.7). Eligibility is computed from run state;
+  // role gates whether the buttons are actionable (the API enforces it too).
+  const eligibility = getRecoveryEligibility(run)
+  const canRecover  = RECOVERY_ROLES.has(context.role)
+
   const runBadge: React.CSSProperties = {
     display: 'inline-block', padding: '3px 10px', borderRadius: 4,
     fontSize: 12, fontWeight: 700, color: '#fff',
@@ -153,6 +162,13 @@ export default async function WorkflowRunDetailPage({
           <p style={s.errMsg}><strong>Error:</strong> {run.error_message}</p>
         </div>
       )}
+
+      {/* Recovery actions (Sprint 5.7) */}
+      <WorkflowRecoveryActions
+        runId={run.id}
+        eligibility={eligibility}
+        canRecover={canRecover}
+      />
 
       {/* Run Summary */}
       <div style={s.section}>
