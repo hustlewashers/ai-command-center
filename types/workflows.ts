@@ -41,6 +41,7 @@ export interface WorkflowStepResult {
 
 export interface WorkflowExecutionResult {
   workflow_id: string
+  workflow_run_id: string
   completed_steps: WorkflowStepResult[]
   failed_step?: WorkflowStepResult
   success: boolean

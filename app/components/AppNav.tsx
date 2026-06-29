@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: '/outputs', label: 'Outputs' },
   { href: '/blockers', label: 'Blockers' },
   { href: '/background-jobs', label: 'Jobs' },
+  { href: '/workflow-runs', label: 'Workflow Runs' },
 ]
 
 export default async function AppNav() {
