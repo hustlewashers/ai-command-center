@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge, LookupSelect } from '@/components/ui'
 import type { TaskRow } from '@/types/tasks'
@@ -165,8 +166,8 @@ export default function TasksPage() {
                 const msg = patchMsg[t.id]
                 return (
                   <tr key={t.id}>
-                    <td style={s.td}><code title={t.id}>{short(t.id)}</code></td>
-                    <td style={{ ...s.td, maxWidth: '160px' }}>{t.title}</td>
+                    <td style={s.td}><Link href={`/tasks/${t.id}`} style={s.rowLink} title={t.id}><code>{short(t.id)}</code></Link></td>
+                    <td style={{ ...s.td, maxWidth: '160px' }}><Link href={`/tasks/${t.id}`} style={s.rowLink}>{t.title}</Link></td>
                     <td style={s.td}><code title={t.project_id}>{short(t.project_id)}</code></td>
                     <td style={s.td}><code title={t.department_id}>{short(t.department_id)}</code></td>
                     <td style={s.td}><code title={t.request_id ?? ''}>{short(t.request_id)}</code></td>
@@ -229,4 +230,5 @@ const s: Record<string, React.CSSProperties> = {
   ctrlRow:      { display: 'flex', gap: '0.3rem', alignItems: 'center' },
   selectSm:     { padding: '0.2rem 0.3rem', fontFamily: 'monospace', fontSize: '0.75rem', border: '1px solid #ccc' },
   btnSm:        { padding: '0.2rem 0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', cursor: 'pointer' },
+  rowLink:      { color: '#2563eb', textDecoration: 'none' },
 }

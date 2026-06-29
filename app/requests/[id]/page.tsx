@@ -208,8 +208,8 @@ export default async function RequestDetailPage({
               <div><div style={s.label}>Completed</div><div style={s.val}>{fmt(runEndedAt)}</div></div>
               <div><div style={s.label}>Duration</div><div style={s.val}>{runDuration}</div></div>
               <div><div style={s.label}>Recovery Available</div><div style={s.val}>{triggerStatus.recovery_available ? `yes${triggerStatus.recommended_action ? ` (${triggerStatus.recommended_action})` : ''}` : 'no'}</div></div>
-              <div><div style={s.label}>Task</div><div style={s.val}>{taskId ? <Link href="/tasks" style={s.link}>{taskId.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
-              <div><div style={s.label}>Work Packet</div><div style={s.val}>{wpId ? <Link href="/work-packets" style={s.link}>{wpId.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
+              <div><div style={s.label}>Task</div><div style={s.val}>{taskId ? <Link href={`/tasks/${taskId}`} style={s.link}>{taskId.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
+              <div><div style={s.label}>Work Packet</div><div style={s.val}>{wpId ? <Link href={`/work-packets/${wpId}`} style={s.link}>{wpId.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <div style={s.label}>Latest Execution</div>
                 <div style={s.val}>{latestLog ? <><code>{latestLog.event_type}</code> — {latestLog.summary ?? '—'} <span style={{ color: '#9ca3af' }}>({fmt(latestLog.occurred_at)})</span></> : <span style={s.empty}>—</span>}</div>

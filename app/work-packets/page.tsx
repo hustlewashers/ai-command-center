@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge, LookupSelect } from '@/components/ui'
 import type { WorkPacketRow } from '@/types/work-packets'
@@ -221,8 +222,8 @@ export default function WorkPacketsPage() {
                 const effectiveApproval = p.id in patchApproval ? patchApproval[p.id] : p.approval_required_before_start
                 return (
                   <tr key={p.id}>
-                    <td style={s.td}><code title={p.id}>{short(p.id)}</code></td>
-                    <td style={{ ...s.td, maxWidth: '140px' }}>{p.title}</td>
+                    <td style={s.td}><Link href={`/work-packets/${p.id}`} style={s.rowLink} title={p.id}><code>{short(p.id)}</code></Link></td>
+                    <td style={{ ...s.td, maxWidth: '140px' }}><Link href={`/work-packets/${p.id}`} style={s.rowLink}>{p.title}</Link></td>
                     <td style={s.td}><code title={p.department_id}>{short(p.department_id)}</code></td>
                     <td style={s.td}><span style={s.muted2}>{p.parent_type}/</span><code title={p.parent_id}>{short(p.parent_id)}</code></td>
                     <td style={s.td}>{p.priority}</td>
@@ -289,4 +290,5 @@ const s: Record<string, React.CSSProperties> = {
   selectSm:     { padding: '0.2rem 0.3rem', fontFamily: 'monospace', fontSize: '0.75rem', border: '1px solid #ccc' },
   btnSm:        { padding: '0.2rem 0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', cursor: 'pointer' },
   checkboxSm:   { display: 'flex', alignItems: 'center', fontSize: '0.72rem', marginTop: '0.25rem', cursor: 'pointer' },
+  rowLink:      { color: '#2563eb', textDecoration: 'none' },
 }
