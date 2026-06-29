@@ -587,7 +587,7 @@ export default async function DashboardPage({
             <MiniTable cols={['subject', 'cat', 'trigger']}>
               {approvals.rows.map(a => (
                 <tr key={a.id}>
-                  <Td><code>{a.subject_type}</code></Td>
+                  <Td><Link href={`/approvals/${a.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}><code>{a.subject_type}</code></Link></Td>
                   <Td><code>{a.category}</code></Td>
                   <Td w="160px">{(a.trigger_reason ?? '').slice(0, 50)}</Td>
                 </tr>

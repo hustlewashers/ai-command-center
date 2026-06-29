@@ -86,7 +86,7 @@ export default async function DecisionDetailPage({
 
       <Section title={`Approvals (${approvals.length})`}>
         {approvals.length === 0 ? <Empty>No approvals for this decision.</Empty> : approvals.map(a => (
-          <Row key={a.id}><Link href="/approvals" style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
+          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
         ))}
       </Section>
 

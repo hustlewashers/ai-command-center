@@ -17,6 +17,7 @@ type TaskRel = { id: string; title: string; status: string }
 type ProjRel = { id: string; name: string }
 type BlkRel  = { id: string; description: string; severity: string; status: string }
 type RunRel  = { id: string; workflow_id: string; status: string }
+type ApprRel = { id: string; category: string; status: string; trigger_reason: string }
 
 export default async function WorkPacketDetailPage({
   params,
@@ -39,7 +40,7 @@ export default async function WorkPacketDetailPage({
   // Parent (task or project), blockers, workflow runs — all non-fatal.
   // Note: outputs have no work_packet_id column (schema) — outputs attach to
   // tasks, not work packets, so there is no outputs section here.
-  const [parentTaskRes, parentProjRes, blkRes] = await Promise.all([
+  const [parentTaskRes, parentProjRes, blkRes, apprRes] = await Promise.all([
     wp.parent_type === 'task'
       ? supabase.from('tasks').select('id, title, status').eq('id', wp.parent_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -48,6 +49,9 @@ export default async function WorkPacketDetailPage({
       : Promise.resolve({ data: null }),
     supabase.from('blockers').select('id, description, severity, status')
       .eq('blocked_entity_type', 'work_packet').eq('blocked_entity_id', wp.id)
+      .order('created_at', { ascending: false }).limit(50),
+    supabase.from('approvals').select('id, category, status, trigger_reason')
+      .eq('subject_type', 'work_packet').eq('subject_id', wp.id)
       .order('created_at', { ascending: false }).limit(50),
   ])
 
@@ -60,6 +64,7 @@ export default async function WorkPacketDetailPage({
   const parentTask    = (parentTaskRes.data ?? null) as TaskRel | null
   const parentProject = (parentProjRes.data ?? null) as ProjRel | null
   const blockers      = (blkRes.data ?? []) as unknown as BlkRel[]
+  const approvals     = (apprRes.data ?? []) as unknown as ApprRel[]
 
   return (
     <div style={s.page}>
@@ -111,6 +116,13 @@ export default async function WorkPacketDetailPage({
       <Section title={`Blockers (${blockers.length})`}>
         {blockers.length === 0 ? <Empty>No blockers.</Empty> : blockers.map(b => (
           <Row key={b.id}><Link href={`/blockers/${b.id}`} style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
+        ))}
+      </Section>
+
+      {/* Approvals */}
+      <Section title={`Approvals (${approvals.length})`}>
+        {approvals.length === 0 ? <Empty>No approvals.</Empty> : approvals.map(a => (
+          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
         ))}
       </Section>
 

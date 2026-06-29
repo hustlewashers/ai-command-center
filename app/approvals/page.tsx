@@ -2,9 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge, LookupSelect } from '@/components/ui'
 import type { ApprovalRow, ApprovalSubjectType } from '@/types/approvals'
+
+// subject_type → detail route base (all exist as of Sprint 5.13).
+const SUBJECT_ROUTE: Record<ApprovalSubjectType, string> = {
+  task: '/tasks', work_packet: '/work-packets', decision: '/decisions', output: '/outputs',
+}
 
 const SUBJECT_TYPES: ApprovalSubjectType[] = ['task', 'work_packet', 'decision', 'output']
 const CATEGORIES = ['a', 'b'] as const
@@ -217,10 +223,10 @@ export default function ApprovalsPage() {
             <tbody>
               {approvals.map(a => (
                 <tr key={a.id}>
-                  <td style={s.td}><code title={a.id}>{short(a.id)}</code></td>
+                  <td style={s.td}><Link href={`/approvals/${a.id}`} style={s.rowLink} title={a.id}><code>{short(a.id)}</code></Link></td>
                   <td style={s.td}><code title={a.department_id}>{short(a.department_id)}</code></td>
                   <td style={s.td}><code>{a.subject_type}</code></td>
-                  <td style={s.td}><code title={a.subject_id}>{short(a.subject_id)}</code></td>
+                  <td style={s.td}><Link href={`${SUBJECT_ROUTE[a.subject_type]}/${a.subject_id}`} style={s.rowLink} title={a.subject_id}><code>{short(a.subject_id)}</code></Link></td>
                   <td style={s.td}><code>{a.category}</code></td>
                   <td style={{ ...s.td, maxWidth: '160px' }}>{a.trigger_reason}</td>
                   <td style={s.td}>{a.approver_role}</td>
@@ -254,4 +260,5 @@ const s: Record<string, React.CSSProperties> = {
   table:        { borderCollapse: 'collapse', width: '100%', fontSize: '0.8rem' },
   th:           { textAlign: 'left', padding: '0.3rem 0.5rem', borderBottom: '2px solid #ddd', whiteSpace: 'nowrap' },
   td:           { padding: '0.3rem 0.5rem', borderBottom: '1px solid #eee', verticalAlign: 'top', wordBreak: 'break-word' },
+  rowLink:      { color: '#2563eb', textDecoration: 'none' },
 }

@@ -19,6 +19,7 @@ type OutRel  = { id: string; title: string; output_type: string; status: string 
 type DecRel  = { id: string; summary: string; status: string }
 type BlkRel  = { id: string; description: string; severity: string; status: string }
 type RunRel  = { id: string; workflow_id: string; status: string }
+type ApprRel = { id: string; category: string; status: string; trigger_reason: string }
 
 export default async function TaskDetailPage({
   params,
@@ -40,7 +41,7 @@ export default async function TaskDetailPage({
 
   // Related entities — each independent and non-fatal (RLS-hidden rows just don't appear).
   // workflow_runs uses a JSONB path filter on accumulated.task_id; guarded separately.
-  const [reqRes, wpRes, outRes, decRes, blkRes] = await Promise.all([
+  const [reqRes, wpRes, outRes, decRes, blkRes, apprRes] = await Promise.all([
     task.request_id
       ? supabase.from('requests').select('id, intent, status').eq('id', task.request_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -53,6 +54,9 @@ export default async function TaskDetailPage({
       .eq('task_id', task.id).order('created_at', { ascending: false }).limit(50),
     supabase.from('blockers').select('id, description, severity, status')
       .eq('blocked_entity_type', 'task').eq('blocked_entity_id', task.id)
+      .order('created_at', { ascending: false }).limit(50),
+    supabase.from('approvals').select('id, category, status, trigger_reason')
+      .eq('subject_type', 'task').eq('subject_id', task.id)
       .order('created_at', { ascending: false }).limit(50),
   ])
 
@@ -67,6 +71,7 @@ export default async function TaskDetailPage({
   const outputs       = (outRes.data ?? []) as unknown as OutRel[]
   const decisions     = (decRes.data ?? []) as unknown as DecRel[]
   const blockers      = (blkRes.data ?? []) as unknown as BlkRel[]
+  const approvals     = (apprRes.data ?? []) as unknown as ApprRel[]
 
   return (
     <div style={s.page}>
@@ -130,6 +135,13 @@ export default async function TaskDetailPage({
       <Section title={`Blockers (${blockers.length})`}>
         {blockers.length === 0 ? <Empty>No blockers.</Empty> : blockers.map(b => (
           <Row key={b.id}><Link href={`/blockers/${b.id}`} style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
+        ))}
+      </Section>
+
+      {/* Approvals */}
+      <Section title={`Approvals (${approvals.length})`}>
+        {approvals.length === 0 ? <Empty>No approvals.</Empty> : approvals.map(a => (
+          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
         ))}
       </Section>
 

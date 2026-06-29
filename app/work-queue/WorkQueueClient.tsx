@@ -356,7 +356,11 @@ export default function WorkQueueClient({ userId, role, departmentId }: Props) {
                     const busy = !!actioning[a.id]
                     return (
                       <tr key={a.id}>
-                        <TD><code>{a.subject_type}</code></TD>
+                        <TD>
+                          <Link href={`/approvals/${a.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                            <code>{a.subject_type}</code>
+                          </Link>
+                        </TD>
                         <TD><code>{a.category}</code></TD>
                         <TD w="130px">{(a.trigger_reason ?? '').slice(0, 40)}</TD>
                         <TD>
