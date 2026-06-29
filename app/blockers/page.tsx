@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge, LookupSelect } from '@/components/ui'
 import type { BlockerRow } from '@/types/blockers'
@@ -170,12 +171,16 @@ export default function BlockersPage() {
                 const msg = patchMsg[b.id]
                 return (
                   <tr key={b.id}>
-                    <td style={s.td}><code title={b.id}>{short(b.id)}</code></td>
-                    <td style={{ ...s.td, maxWidth: '180px' }}>{b.description}</td>
+                    <td style={s.td}><Link href={`/blockers/${b.id}`} style={s.rowLink} title={b.id}><code>{short(b.id)}</code></Link></td>
+                    <td style={{ ...s.td, maxWidth: '180px' }}><Link href={`/blockers/${b.id}`} style={s.rowLink}>{b.description}</Link></td>
                     <td style={s.td}>{b.severity}</td>
                     <td style={s.td}><StatusBadge status={b.status} /></td>
                     <td style={s.td}>{b.blocked_entity_type}</td>
-                    <td style={s.td}><code title={b.blocked_entity_id}>{short(b.blocked_entity_id)}</code></td>
+                    <td style={s.td}>
+                      <Link href={`${b.blocked_entity_type === 'task' ? '/tasks' : '/work-packets'}/${b.blocked_entity_id}`} style={s.rowLink} title={b.blocked_entity_id}>
+                        <code>{short(b.blocked_entity_id)}</code>
+                      </Link>
+                    </td>
                     <td style={s.td}><code title={b.department_id}>{short(b.department_id)}</code></td>
                     <td style={s.td}><code title={b.reported_by_user_id}>{short(b.reported_by_user_id)}</code></td>
                     <td style={s.td}>{new Date(b.created_at).toLocaleString()}</td>
@@ -240,4 +245,5 @@ const s: Record<string, React.CSSProperties> = {
   selectSm:     { padding: '0.2rem 0.3rem', fontFamily: 'monospace', fontSize: '0.75rem', border: '1px solid #ccc' },
   btnSm:        { padding: '0.2rem 0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', cursor: 'pointer' },
   noteInput:    { marginTop: '0.25rem', padding: '0.2rem 0.3rem', fontFamily: 'monospace', fontSize: '0.72rem', border: '1px solid #ccc', width: '100%', boxSizing: 'border-box' },
+  rowLink:      { color: '#2563eb', textDecoration: 'none' },
 }

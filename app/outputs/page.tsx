@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge, LookupSelect } from '@/components/ui'
 import type { OutputRow } from '@/types/outputs'
@@ -166,8 +167,8 @@ export default function OutputsPage() {
                 const msg = patchMsg[o.id]
                 return (
                   <tr key={o.id}>
-                    <td style={s.td}><code title={o.id}>{short(o.id)}</code></td>
-                    <td style={{ ...s.td, maxWidth: '160px' }}>{o.title}</td>
+                    <td style={s.td}><Link href={`/outputs/${o.id}`} style={s.rowLink} title={o.id}><code>{short(o.id)}</code></Link></td>
+                    <td style={{ ...s.td, maxWidth: '160px' }}><Link href={`/outputs/${o.id}`} style={s.rowLink}>{o.title}</Link></td>
                     <td style={s.td}>{o.output_type}</td>
                     <td style={s.td}><StatusBadge status={o.status} /></td>
                     <td style={s.td}><code title={o.department_id}>{short(o.department_id)}</code></td>
@@ -225,4 +226,5 @@ const s: Record<string, React.CSSProperties> = {
   ctrlRow:      { display: 'flex', gap: '0.3rem', alignItems: 'center' },
   selectSm:     { padding: '0.2rem 0.3rem', fontFamily: 'monospace', fontSize: '0.75rem', border: '1px solid #ccc' },
   btnSm:        { padding: '0.2rem 0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', cursor: 'pointer' },
+  rowLink:      { color: '#2563eb', textDecoration: 'none' },
 }

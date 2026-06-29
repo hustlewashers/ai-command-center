@@ -86,7 +86,7 @@ export default async function WorkPacketDetailPage({
             <div style={s.val}>
               {wp.parent_type === 'task'
                 ? <Link href={`/tasks/${wp.parent_id}`} style={s.link}>{wp.parent_id.slice(0, 8)}…</Link>
-                : <code>{wp.parent_id.slice(0, 8)}…</code>}
+                : <Link href={`/projects/${wp.parent_id}`} style={s.link}>{wp.parent_id.slice(0, 8)}…</Link>}
             </div>
           </div>
           <div><div style={s.label}>Author</div><div style={s.val}><code>{wp.author_user_id.slice(0, 8)}…</code></div></div>
@@ -103,14 +103,14 @@ export default async function WorkPacketDetailPage({
               ? <Row><Link href={`/tasks/${parentTask.id}`} style={s.link}>{parentTask.id.slice(0, 8)}…</Link> <span style={s.dim}>{parentTask.title.slice(0, 70)}</span> <StatusBadge status={parentTask.status} /></Row>
               : <Empty>Parent task not visible.</Empty>)
           : (parentProject
-              ? <Row><code>{parentProject.id.slice(0, 8)}…</code> <span style={s.dim}>{parentProject.name}</span> <span style={s.tag}>project</span></Row>
+              ? <Row><Link href={`/projects/${parentProject.id}`} style={s.link}>{parentProject.id.slice(0, 8)}…</Link> <span style={s.dim}>{parentProject.name}</span> <span style={s.tag}>project</span></Row>
               : <Empty>Parent project not visible.</Empty>)}
       </Section>
 
       {/* Blockers */}
       <Section title={`Blockers (${blockers.length})`}>
         {blockers.length === 0 ? <Empty>No blockers.</Empty> : blockers.map(b => (
-          <Row key={b.id}><Link href="/blockers" style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
+          <Row key={b.id}><Link href={`/blockers/${b.id}`} style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
         ))}
       </Section>
 

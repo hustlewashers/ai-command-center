@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge, LookupSelect } from '@/components/ui'
 import type { DecisionRow } from '@/types/decisions'
@@ -134,9 +135,9 @@ export default function DecisionsPage() {
                 const msg = patchMsg[d.id]
                 return (
                   <tr key={d.id}>
-                    <td style={s.td}><code title={d.id}>{short(d.id)}</code></td>
-                    <td style={s.td}><code title={d.task_id}>{short(d.task_id)}</code></td>
-                    <td style={{ ...s.td, maxWidth: '160px' }}>{d.summary}</td>
+                    <td style={s.td}><Link href={`/decisions/${d.id}`} style={s.rowLink} title={d.id}><code>{short(d.id)}</code></Link></td>
+                    <td style={s.td}><Link href={`/tasks/${d.task_id}`} style={s.rowLink} title={d.task_id}><code>{short(d.task_id)}</code></Link></td>
+                    <td style={{ ...s.td, maxWidth: '160px' }}><Link href={`/decisions/${d.id}`} style={s.rowLink}>{d.summary}</Link></td>
                     <td style={{ ...s.td, maxWidth: '160px' }}>{d.rationale}</td>
                     <td style={s.td}><StatusBadge status={d.status} /></td>
                     <td style={s.td}><code title={d.decided_by_user_id ?? ''}>{short(d.decided_by_user_id)}</code></td>
@@ -191,4 +192,5 @@ const s: Record<string, React.CSSProperties> = {
   ctrlRow:      { display: 'flex', gap: '0.3rem', alignItems: 'center' },
   selectSm:     { padding: '0.2rem 0.3rem', fontFamily: 'monospace', fontSize: '0.75rem', border: '1px solid #ccc' },
   btnSm:        { padding: '0.2rem 0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', cursor: 'pointer' },
+  rowLink:      { color: '#2563eb', textDecoration: 'none' },
 }

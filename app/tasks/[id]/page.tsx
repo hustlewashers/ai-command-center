@@ -86,7 +86,7 @@ export default async function TaskDetailPage({
           <div><div style={s.label}>Status</div><div style={s.val}><StatusBadge status={task.status} /></div></div>
           <div><div style={s.label}>Priority</div><div style={s.val}>{task.priority}</div></div>
           <div><div style={s.label}>Department</div><div style={s.val}><code>{task.department_id}</code></div></div>
-          <div><div style={s.label}>Project</div><div style={s.val}><code>{task.project_id}</code></div></div>
+          <div><div style={s.label}>Project</div><div style={s.val}><Link href={`/projects/${task.project_id}`} style={s.link}>{task.project_id.slice(0, 8)}…</Link></div></div>
           <div>
             <div style={s.label}>Request</div>
             <div style={s.val}>{task.request_id ? <Link href={`/requests/${task.request_id}`} style={s.link}>{task.request_id.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div>
@@ -115,21 +115,21 @@ export default async function TaskDetailPage({
       {/* Outputs */}
       <Section title={`Outputs (${outputs.length})`}>
         {outputs.length === 0 ? <Empty>No outputs.</Empty> : outputs.map(o => (
-          <Row key={o.id}><Link href="/outputs" style={s.link}>{o.id.slice(0, 8)}…</Link> <span style={s.dim}>{o.title.slice(0, 60)}</span> <code style={s.tag}>{o.output_type}</code> <StatusBadge status={o.status} /></Row>
+          <Row key={o.id}><Link href={`/outputs/${o.id}`} style={s.link}>{o.id.slice(0, 8)}…</Link> <span style={s.dim}>{o.title.slice(0, 60)}</span> <code style={s.tag}>{o.output_type}</code> <StatusBadge status={o.status} /></Row>
         ))}
       </Section>
 
       {/* Decisions */}
       <Section title={`Decisions (${decisions.length})`}>
         {decisions.length === 0 ? <Empty>No decisions.</Empty> : decisions.map(d => (
-          <Row key={d.id}><Link href="/decisions" style={s.link}>{d.id.slice(0, 8)}…</Link> <span style={s.dim}>{(d.summary ?? '').slice(0, 70)}</span> <StatusBadge status={d.status} /></Row>
+          <Row key={d.id}><Link href={`/decisions/${d.id}`} style={s.link}>{d.id.slice(0, 8)}…</Link> <span style={s.dim}>{(d.summary ?? '').slice(0, 70)}</span> <StatusBadge status={d.status} /></Row>
         ))}
       </Section>
 
       {/* Blockers */}
       <Section title={`Blockers (${blockers.length})`}>
         {blockers.length === 0 ? <Empty>No blockers.</Empty> : blockers.map(b => (
-          <Row key={b.id}><Link href="/blockers" style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
+          <Row key={b.id}><Link href={`/blockers/${b.id}`} style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
         ))}
       </Section>
 

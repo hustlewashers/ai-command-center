@@ -179,7 +179,7 @@ export default async function RequestDetailPage({
           <div><div style={s.label}>Source</div><div style={s.val}>{req.source}</div></div>
           <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Intent</div><div style={s.val}>{req.intent}</div></div>
           <div><div style={s.label}>Department</div><div style={s.val}><code>{req.routed_department_id ?? '—'}</code></div></div>
-          <div><div style={s.label}>Project</div><div style={s.val}><code>{req.project_id ?? '—'}</code></div></div>
+          <div><div style={s.label}>Project</div><div style={s.val}>{req.project_id ? <Link href={`/projects/${req.project_id}`} style={s.link}>{req.project_id.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
           <div><div style={s.label}>Submitted</div><div style={s.val}>{fmt(req.submitted_at)}</div></div>
         </div>
       </div>
