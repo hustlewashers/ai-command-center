@@ -3,8 +3,17 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getRecoveryEligibility } from '@/lib/workflows/recovery'
+import { getRequestTriggerStatus } from '@/lib/workflows/trigger-status'
+import RequestWorkflowActions from './RequestWorkflowActions'
 import type { WorkflowRunRow, WorkflowStepRunRow, WorkflowRunStatus } from '@/types/workflow-runs'
 import type { RequestRow } from '@/types/requests'
+
+const TRIGGER_ROLES = new Set(['org_admin', 'department_lead'])
+
+function fmtShort(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
 const REQUEST_COLS =
   'id, organization_id, source, intent, status, submitted_at, submitted_by_user_id, routed_department_id, project_id, metadata, created_at, updated_at'
@@ -97,6 +106,12 @@ export default async function RequestDetailPage({
     job = (jobRes.data ?? null) as unknown as JobRow | null
   }
 
+  // Trigger status (Sprint 5.9) — drives history + manual-start eligibility.
+  const triggerStatus = await getRequestTriggerStatus(supabase, {
+    id: req.id, project_id: req.project_id, routed_department_id: req.routed_department_id,
+  })
+  const roleAllowed = TRIGGER_ROLES.has(context.role)
+
   const eligibility = run ? getRecoveryEligibility(run) : null
   const recoveryActions = eligibility
     ? Object.entries(eligibility).filter(([, v]) => v).map(([k]) => k.replace('can_', ''))
@@ -121,6 +136,9 @@ export default async function RequestDetailPage({
     val:     { fontSize: 13 } as React.CSSProperties,
     link:    { color: '#2563eb', textDecoration: 'none' } as React.CSSProperties,
     empty:   { color: '#9ca3af', fontSize: 13 } as React.CSSProperties,
+    table:   { width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 } as React.CSSProperties,
+    th:      { textAlign: 'left' as const, padding: '7px 10px', borderBottom: '2px solid #e5e7eb', fontWeight: 600, color: '#374151', background: '#f9fafb' } as React.CSSProperties,
+    td:      { padding: '7px 10px', borderBottom: '1px solid #f3f4f6', verticalAlign: 'top' as const } as React.CSSProperties,
   }
 
   return (
@@ -203,6 +221,64 @@ export default async function RequestDetailPage({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Workflow Actions (Sprint 5.9) */}
+      <div style={s.section}>
+        <h2 style={s.h2}>Workflow Actions</h2>
+        <div style={{ ...s.grid, gridTemplateColumns: '1fr' }}>
+          <div>
+            <div style={s.label}>Latest Trigger Reason</div>
+            <div style={s.val}>
+              {latestLog
+                ? <>{latestLog.summary ?? '—'} <span style={{ color: '#9ca3af' }}>({fmt(latestLog.occurred_at)})</span></>
+                : <span style={s.empty}>no trigger recorded yet</span>}
+            </div>
+          </div>
+          <RequestWorkflowActions
+            requestId={req.id}
+            roleAllowed={roleAllowed}
+            hasActiveWorkflow={triggerStatus.has_active_workflow}
+            missingInputs={triggerStatus.missing_inputs}
+            defaultProjectId={req.project_id ?? ''}
+            defaultDepartmentId={req.routed_department_id ?? ''}
+          />
+        </div>
+      </div>
+
+      {/* Trigger History (Sprint 5.9) */}
+      <div style={s.section}>
+        <h2 style={s.h2}>Trigger History ({triggerStatus.recent_runs.length})</h2>
+        {triggerStatus.recent_runs.length === 0 ? (
+          <div style={s.empty}>No workflow runs for this request yet.</div>
+        ) : (
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Run</th>
+                <th style={s.th}>Workflow</th>
+                <th style={s.th}>Status</th>
+                <th style={s.th}>Started</th>
+                <th style={s.th}>Completed</th>
+                <th style={s.th}>Current Step</th>
+              </tr>
+            </thead>
+            <tbody>
+              {triggerStatus.recent_runs.map(r => (
+                <tr key={r.id}>
+                  <td style={s.td}><Link href={`/workflow-runs/${r.id}`} style={s.link}>{r.id.slice(0, 8)}…</Link></td>
+                  <td style={s.td}><code>{r.workflow_id}</code></td>
+                  <td style={s.td}>
+                    <span style={s.badge(RUN_STATUS_COLOR[r.status as WorkflowRunStatus] ?? '#6b7280')}>{r.status}</span>
+                  </td>
+                  <td style={s.td}>{fmtShort(r.started_at)}</td>
+                  <td style={s.td}>{fmtShort(r.completed_at ?? r.failed_at)}</td>
+                  <td style={s.td}>{r.current_step_id ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

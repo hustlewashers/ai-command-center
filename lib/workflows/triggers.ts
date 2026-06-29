@@ -99,36 +99,72 @@ async function findActiveWorkflow(
   return null
 }
 
-// ── Audit (TASK 7) ───────────────────────────────────────────
-// Request-scoped narrative log linking the entity to its workflow job.
-// The executor still writes the workflow start/complete logs (context_type
-// 'workflow'); this one lives under the triggering entity for traceability.
-async function logTrigger(
+// ── Audit (TASK 6) ───────────────────────────────────────────
+// One execution_logs row per trigger ATTEMPT — triggered, deduped, or skipped —
+// so operators can see why a workflow did or didn't start. Lives under the
+// triggering entity (context_type 'request'/'task'/'workflow'); the executor
+// still writes the separate workflow start/complete logs.
+function triggerOutcome(result: WorkflowTriggerResult): 'triggered' | 'deduped' | 'skipped' {
+  if (result.triggered) return 'triggered'
+  if (result.deduped)   return 'deduped'
+  return 'skipped'
+}
+
+async function logTriggerOutcome(
   svc: SupabaseClient,
   ctx: UserContext,
   organizationId: string,
   contextType: 'request' | 'task' | 'workflow',
   contextId: string,
-  workflowId: string,
-  jobId: string,
+  entityType: WorkflowTriggerEntityType,
+  result: WorkflowTriggerResult,
 ): Promise<void> {
+  const outcome = triggerOutcome(result)
+  const wf = result.workflow_id ?? 'request_to_task'
   const { error } = await svc.from('execution_logs').insert({
     organization_id: organizationId,
     event_type:      'state_change',
     actor:           `user:${ctx.userId}`,
-    summary:         `Workflow '${workflowId}' triggered for ${contextType} ${contextId}`,
+    summary:         `Workflow trigger ${outcome} for ${entityType} ${contextId}: ${result.reason}`,
     context_type:    contextType,
     context_id:      contextId,
     metadata: {
-      workflow_trigger: true,
-      workflow_id:      workflowId,
-      background_job_id: jobId,
-      actor_user_id:    ctx.userId,
-      actor_role:       ctx.role,
+      workflow_trigger:    true,
+      trigger_result:      outcome,        // 'triggered' | 'deduped' | 'skipped'
+      deduped:             result.deduped,
+      reason:              result.reason,
+      workflow_id:         wf,
+      trigger_entity_type: entityType,
+      trigger_entity_id:   contextId,
+      background_job_id:   result.background_job_id,
+      workflow_run_id:     result.workflow_run_id,
+      actor_user_id:       ctx.userId,
+      actor_role:          ctx.role,
     },
     status: 'recorded',
   })
   if (error) console.warn('[workflow-triggers] audit log failed:', error.message)
+}
+
+// Validate that an override department/project id belongs to the actor's org,
+// so a manual trigger cannot inject another org's entity into the workflow.
+async function assertOrgOwns(
+  svc: SupabaseClient,
+  table: 'departments' | 'projects',
+  id: string,
+  organizationId: string,
+): Promise<void> {
+  const { data, error } = await svc.from(table).select('id')
+    .eq('id', id).eq('organization_id', organizationId).maybeSingle()
+  if (error) throw createError('internal', `trigger: ${table} validation failed: ${error.message}`)
+  if (!data) throw createError('validation', `Provided ${table.slice(0, -1)} is not in your organization`)
+}
+
+// Optional inputs an operator may supply when manually starting a workflow.
+export interface RequestTriggerOverrides {
+  workflowId?: string
+  projectId?: string | null
+  departmentId?: string | null
 }
 
 // ── Request trigger (the live path for Sprint 5.8) ───────────
@@ -136,15 +172,16 @@ async function logTrigger(
 export async function triggerRequestWorkflow(
   requestId: string,
   ctx: UserContext,
+  overrides?: RequestTriggerOverrides,
 ): Promise<WorkflowTriggerResult> {
   if (ctx.role === 'read_only') {
     throw createError('forbidden', 'read_only role cannot trigger workflows')
   }
 
   const svc = getServiceClient()
-  const workflowId = 'request_to_task'
+  const workflowId = overrides?.workflowId ?? 'request_to_task'
 
-  // Workflow availability
+  // Workflow availability (validates an explicitly-supplied workflow_id too)
   const workflow = getWorkflow(workflowId)
   if (!workflow || !workflowSupportsTrigger(workflow, 'request')) {
     return notTriggered(`No workflow available for request triggers ('${workflowId}')`)
@@ -169,25 +206,40 @@ export async function triggerRequestWorkflow(
     intent: string; submitted_by_user_id: string | null
   }
 
-  // request_to_task → create_task requires a department and project. If the
-  // request lacks them, do not enqueue a guaranteed-to-fail run; surface why.
-  const departmentId = r.routed_department_id ?? ctx.departmentId
+  // Resolve workflow inputs: operator overrides win, then request fields, then
+  // (for department only) the actor's own department. Overrides are validated
+  // to belong to the actor's org so a manual trigger can't inject foreign data.
+  if (overrides?.departmentId) await assertOrgOwns(svc, 'departments', overrides.departmentId, ctx.organizationId)
+  if (overrides?.projectId)    await assertOrgOwns(svc, 'projects',    overrides.projectId,    ctx.organizationId)
+
+  const departmentId = overrides?.departmentId ?? r.routed_department_id ?? ctx.departmentId
+  const projectId    = overrides?.projectId    ?? r.project_id
+
+  // request_to_task → create_task requires a department and project. If neither
+  // the request nor the operator supplied them, do not enqueue a doomed run.
   if (!departmentId) {
-    return notTriggered('Request has no routed department; request_to_task not triggered')
+    const result = notTriggered('Request has no department; request_to_task not triggered')
+    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result)
+    return result
   }
-  if (!r.project_id) {
-    return notTriggered('Request has no project; request_to_task not triggered')
+  if (!projectId) {
+    const result = notTriggered('Request has no project; request_to_task not triggered')
+    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result)
+    return result
   }
 
-  // Duplicate protection (TASK 4)
+  // Duplicate protection
   const existing = await findActiveWorkflow(svc, r.organization_id, 'request', r.id, workflowId)
-  if (existing) return existing
+  if (existing) {
+    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', existing)
+    return existing
+  }
 
-  // Enqueue (TASK 2 / TASK 6 payload shape)
+  // Enqueue
   const inputs = {
     organization_id:     r.organization_id,
     department_id:       departmentId,
-    project_id:          r.project_id,
+    project_id:          projectId,
     created_by:          r.submitted_by_user_id ?? ctx.userId,
     title:               r.intent,
     request_id:          r.id,
@@ -204,13 +256,13 @@ export async function triggerRequestWorkflow(
     created_by_user_id: ctx.userId,
   })
 
-  await logTrigger(svc, ctx, r.organization_id, 'request', r.id, workflowId, jobId)
-
-  return {
+  const result: WorkflowTriggerResult = {
     triggered: true, deduped: false, workflow_id: workflowId,
     background_job_id: jobId, workflow_run_id: null,
     reason: 'Workflow enqueued',
   }
+  await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result)
+  return result
 }
 
 // ── Task trigger (forward-looking) ───────────────────────────
@@ -271,13 +323,13 @@ export async function triggerTaskWorkflow(
     created_by_user_id: ctx.userId,
   })
 
-  await logTrigger(svc, ctx, t.organization_id, 'task', t.id, workflow.id, jobId)
-
-  return {
+  const result: WorkflowTriggerResult = {
     triggered: true, deduped: false, workflow_id: workflow.id,
     background_job_id: jobId, workflow_run_id: null,
     reason: 'Workflow enqueued',
   }
+  await logTriggerOutcome(svc, ctx, t.organization_id, 'task', t.id, 'task', result)
+  return result
 }
 
 // ── Approval trigger (forward-looking) ───────────────────────
@@ -331,11 +383,11 @@ export async function triggerApprovalWorkflow(
     created_by_user_id: ctx.userId,
   })
 
-  await logTrigger(svc, ctx, a.organization_id, 'workflow', a.id, workflow.id, jobId)
-
-  return {
+  const result: WorkflowTriggerResult = {
     triggered: true, deduped: false, workflow_id: workflow.id,
     background_job_id: jobId, workflow_run_id: null,
     reason: 'Workflow enqueued',
   }
+  await logTriggerOutcome(svc, ctx, a.organization_id, 'workflow', a.id, 'approval', result)
+  return result
 }

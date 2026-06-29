@@ -99,6 +99,7 @@ const ALERT_KINDS: Record<string, { label: string; bg: string }> = {
   failed:   { label: 'FAIL', bg: '#b45309' },
   flagged:  { label: 'FLAG', bg: '#7c3aed' },
   rejected: { label: 'REJ',  bg: '#6b7280' },
+  missing:  { label: 'WF',   bg: '#0891b2' },
 }
 
 function AlertRow({ kind, text, href }: { kind: string; text: string; href: string }) {
@@ -170,6 +171,8 @@ export default async function DashboardPage({
     wfFailedResult,
     wfFailedIdsResult,
     wfParentIdsResult,
+    activeReqsResult,
+    reqRunIdsResult,
   ] = await Promise.all([
     supabase.from('requests')
       .select('id, intent, status, submitted_at', { count: 'exact' })
@@ -244,6 +247,14 @@ export default async function DashboardPage({
     supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'failed'),
     supabase.from('workflow_runs').select('id').eq('status', 'failed').limit(500),
     supabase.from('workflow_runs').select('parent_run_id').not('parent_run_id', 'is', null).limit(1000),
+
+    // Missing-trigger detection (Sprint 5.9): active requests + the set of
+    // request ids that already have a workflow run.
+    supabase.from('requests').select('id')
+      .in('status', ['received', 'triaged', 'in_progress'])
+      .order('created_at', { ascending: false }).limit(200),
+    supabase.from('workflow_runs').select('trigger_entity_id')
+      .eq('trigger_entity_type', 'request').limit(2000),
   ])
 
   // Extract with safe fallbacks
@@ -276,6 +287,12 @@ export default async function DashboardPage({
     failed:         wfFailedResult.count    ?? 0,
     recoveryNeeded: wfFailedIds.filter(r => !recoveredSet.has(r.id)).length,
   }
+  // Requests with no workflow run yet (conservative "missing trigger" signal).
+  const activeReqIds   = (activeReqsResult.data ?? []) as { id: string }[]
+  const reqRunIdSet    = new Set(((reqRunIdsResult.data ?? []) as { trigger_entity_id: string | null }[])
+    .map(r => r.trigger_entity_id).filter(Boolean) as string[])
+  const missingTriggerCount = activeReqIds.filter(r => !reqRunIdSet.has(r.id)).length
+
   const workflowHealthCards = [
     { label: 'Pending',        value: wfHealth.pending,        href: '/workflow-runs?status=pending',   color: '#6b7280' },
     { label: 'Running',        value: wfHealth.running,        href: '/workflow-runs?status=running',   color: '#2563eb' },
@@ -303,6 +320,14 @@ export default async function DashboardPage({
   rejDecisions.forEach(d =>
     alerts.push({ key: `dec-${d.id}`, kind: 'rejected', text: `Rejected decision: ${trunc(d.summary, 70)}`, href: '/decisions' })
   )
+  if (missingTriggerCount > 0) {
+    alerts.push({
+      key: 'missing-trigger',
+      kind: 'missing',
+      text: `${missingTriggerCount} active request${missingTriggerCount !== 1 ? 's' : ''} with no workflow started`,
+      href: '/requests',
+    })
+  }
 
   // Build recent events timeline — merge 5 sources, sort newest first, cap at 15
   const timeline: TimelineItem[] = [
