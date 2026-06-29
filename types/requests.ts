@@ -23,6 +23,17 @@ export interface RequestRow {
   updated_at: string
 }
 
+// Latest workflow state attached to a request by GET /api/requests (Sprint 5.10).
+export interface RequestWorkflowState {
+  run_id: string
+  workflow_id: string
+  status: string
+}
+
+export interface RequestRowWithWorkflow extends RequestRow {
+  workflow: RequestWorkflowState | null
+}
+
 export interface CreateRequestBody {
   intent: string
   source: RequestSource

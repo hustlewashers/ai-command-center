@@ -76,7 +76,9 @@ export default function RequestWorkflowActions({
     <div>
       {(needProject || needDept) && (
         <div style={s.warn}>
-          Workflow cannot start until project and department are selected.
+          <strong>Missing workflow inputs.</strong> This request has no{' '}
+          {[needDept ? 'department' : null, needProject ? 'project' : null].filter(Boolean).join(' or ')}.
+          Choose values below to start the workflow — they are saved back onto the request.
           <div style={s.selectRow}>
             {needDept && (
               <label style={s.field}>
@@ -105,21 +107,26 @@ export default function RequestWorkflowActions({
       </button>
 
       {feedback?.kind === 'err' && <div style={s.err}>{feedback.message}</div>}
-      {feedback?.kind === 'ok' && (
-        <div style={s.ok}>
-          <span>
-            {feedback.result.triggered ? 'Workflow enqueued.'
-              : feedback.result.deduped ? 'Existing workflow reused.'
-              : `Not started: ${feedback.result.reason}`}
-          </span>
-          {feedback.result.workflow_run_id && (
-            <Link href={`/workflow-runs/${feedback.result.workflow_run_id}`} style={s.link}>view run</Link>
-          )}
-          {!feedback.result.workflow_run_id && feedback.result.background_job_id && (
-            <Link href="/background-jobs" style={s.link}>view job</Link>
-          )}
-        </div>
-      )}
+      {feedback?.kind === 'ok' && (() => {
+        const r = feedback.result
+        // skipped = neither triggered nor deduped (e.g. still missing inputs)
+        const tone = r.triggered ? s.ok : r.deduped ? s.info : s.warnMsg
+        return (
+          <div style={tone}>
+            <span>
+              {r.triggered ? 'Workflow enqueued.'
+                : r.deduped ? 'A workflow is already active — reused it.'
+                : `Not started: ${r.reason}`}
+            </span>
+            {r.workflow_run_id && (
+              <Link href={`/workflow-runs/${r.workflow_run_id}`} style={s.link}>view run</Link>
+            )}
+            {!r.workflow_run_id && r.background_job_id && (
+              <Link href="/background-jobs" style={s.link}>view job</Link>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -134,5 +141,7 @@ const s: Record<string, React.CSSProperties> = {
   btn:        { background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, padding: '6px 14px', fontSize: 13, fontWeight: 700, fontFamily: 'monospace', cursor: 'pointer' },
   err:        { marginTop: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#dc2626' },
   ok:         { marginTop: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#15803d', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+  info:       { marginTop: 10, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#1d4ed8', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
+  warnMsg:    { marginTop: 10, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#92400e', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   link:       { color: '#2563eb', textDecoration: 'none', fontWeight: 700 },
 }

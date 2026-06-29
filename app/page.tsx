@@ -253,8 +253,9 @@ export default async function DashboardPage({
     supabase.from('requests').select('id')
       .in('status', ['received', 'triaged', 'in_progress'])
       .order('created_at', { ascending: false }).limit(200),
-    supabase.from('workflow_runs').select('trigger_entity_id')
-      .eq('trigger_entity_type', 'request').limit(2000),
+    supabase.from('workflow_runs').select('trigger_entity_id, status, created_at')
+      .eq('trigger_entity_type', 'request')
+      .order('created_at', { ascending: false }).limit(2000),
   ])
 
   // Extract with safe fallbacks
@@ -287,11 +288,19 @@ export default async function DashboardPage({
     failed:         wfFailedResult.count    ?? 0,
     recoveryNeeded: wfFailedIds.filter(r => !recoveredSet.has(r.id)).length,
   }
-  // Requests with no workflow run yet (conservative "missing trigger" signal).
-  const activeReqIds   = (activeReqsResult.data ?? []) as { id: string }[]
-  const reqRunIdSet    = new Set(((reqRunIdsResult.data ?? []) as { trigger_entity_id: string | null }[])
-    .map(r => r.trigger_entity_id).filter(Boolean) as string[])
-  const missingTriggerCount = activeReqIds.filter(r => !reqRunIdSet.has(r.id)).length
+  // Requests needing workflow review (Sprint 5.10): active requests with no
+  // workflow run, OR whose latest run failed/cancelled. Runs come newest-first,
+  // so the first status seen per request id is its latest.
+  const activeReqIds = (activeReqsResult.data ?? []) as { id: string }[]
+  const latestRunStatusByReq: Record<string, string> = {}
+  for (const run of (reqRunIdsResult.data ?? []) as { trigger_entity_id: string | null; status: string }[]) {
+    if (!run.trigger_entity_id || latestRunStatusByReq[run.trigger_entity_id]) continue
+    latestRunStatusByReq[run.trigger_entity_id] = run.status
+  }
+  const missingTriggerCount = activeReqIds.filter(r => {
+    const st = latestRunStatusByReq[r.id]
+    return st === undefined || st === 'failed' || st === 'cancelled'
+  }).length
 
   const workflowHealthCards = [
     { label: 'Pending',        value: wfHealth.pending,        href: '/workflow-runs?status=pending',   color: '#6b7280' },
@@ -324,7 +333,7 @@ export default async function DashboardPage({
     alerts.push({
       key: 'missing-trigger',
       kind: 'missing',
-      text: `${missingTriggerCount} active request${missingTriggerCount !== 1 ? 's' : ''} with no workflow started`,
+      text: `${missingTriggerCount} request${missingTriggerCount !== 1 ? 's' : ''} needing workflow review (no run, or latest failed/cancelled)`,
       href: '/requests',
     })
   }

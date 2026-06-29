@@ -9,6 +9,10 @@ const SELECT_COLS = 'id, organization_id, source, intent, status, submitted_at, 
 // GET /api/requests
 // Returns all RLS-visible requests for the caller's org (org-wide SELECT per 009).
 // read_only callers see requests but cannot create them.
+//
+// Each request is annotated with its latest workflow state (Sprint 5.10) via a
+// single batched workflow_runs query (no N+1). Runs the caller can't see under
+// RLS simply resolve to workflow=null.
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -21,7 +25,30 @@ export async function GET() {
       .limit(100)
 
     if (error) throw new Error(error.message)
-    return ok(data ?? [])
+    const requests = (data ?? []) as { id: string }[]
+
+    // Batch: latest run per request (newest first → first seen per id wins).
+    let workflowByRequest: Record<string, { run_id: string; workflow_id: string; status: string }> = {}
+    if (requests.length > 0) {
+      const { data: runs } = await supabase
+        .from('workflow_runs')
+        .select('id, workflow_id, status, trigger_entity_id, created_at')
+        .eq('trigger_entity_type', 'request')
+        .in('trigger_entity_id', requests.map(r => r.id))
+        .order('created_at', { ascending: false })
+
+      const seen = new Set<string>()
+      const map: typeof workflowByRequest = {}
+      for (const run of (runs ?? []) as { id: string; workflow_id: string; status: string; trigger_entity_id: string }[]) {
+        if (seen.has(run.trigger_entity_id)) continue
+        seen.add(run.trigger_entity_id)
+        map[run.trigger_entity_id] = { run_id: run.id, workflow_id: run.workflow_id, status: run.status }
+      }
+      workflowByRequest = map
+    }
+
+    const annotated = requests.map(r => ({ ...r, workflow: workflowByRequest[r.id] ?? null }))
+    return ok(annotated)
   } catch (err) {
     return errorResponse(err)
   }

@@ -223,9 +223,13 @@ export default async function RequestDetailPage({
         </div>
       </div>
 
-      {/* Workflow Actions (Sprint 5.9) */}
+      {/* Workflow Actions (Sprint 5.9 / polished 5.10) */}
       <div style={s.section}>
         <h2 style={s.h2}>Workflow Actions</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
+          Request fields above are this request&apos;s stored values. Inputs supplied here are used to
+          run <code>request_to_task</code>; any missing department/project you choose are saved back onto the request.
+        </p>
         <div style={{ ...s.grid, gridTemplateColumns: '1fr' }}>
           <div>
             <div style={s.label}>Latest Trigger Reason</div>

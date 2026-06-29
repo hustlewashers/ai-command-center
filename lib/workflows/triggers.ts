@@ -118,6 +118,7 @@ async function logTriggerOutcome(
   contextId: string,
   entityType: WorkflowTriggerEntityType,
   result: WorkflowTriggerResult,
+  inputs?: { project_id?: string | null; department_id?: string | null },
 ): Promise<void> {
   const outcome = triggerOutcome(result)
   const wf = result.workflow_id ?? 'request_to_task'
@@ -140,6 +141,9 @@ async function logTriggerOutcome(
       workflow_run_id:     result.workflow_run_id,
       actor_user_id:       ctx.userId,
       actor_role:          ctx.role,
+      // Resolved workflow inputs when known (TASK 6) — null when unresolved.
+      ...(inputs?.project_id    !== undefined ? { project_id:    inputs.project_id }    : {}),
+      ...(inputs?.department_id !== undefined ? { department_id: inputs.department_id } : {}),
     },
     status: 'recorded',
   })
@@ -217,21 +221,22 @@ export async function triggerRequestWorkflow(
 
   // request_to_task → create_task requires a department and project. If neither
   // the request nor the operator supplied them, do not enqueue a doomed run.
+  const auditInputs = { project_id: projectId, department_id: departmentId }
   if (!departmentId) {
     const result = notTriggered('Request has no department; request_to_task not triggered')
-    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result)
+    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result, auditInputs)
     return result
   }
   if (!projectId) {
     const result = notTriggered('Request has no project; request_to_task not triggered')
-    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result)
+    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result, auditInputs)
     return result
   }
 
   // Duplicate protection
   const existing = await findActiveWorkflow(svc, r.organization_id, 'request', r.id, workflowId)
   if (existing) {
-    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', existing)
+    await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', existing, auditInputs)
     return existing
   }
 
@@ -261,7 +266,7 @@ export async function triggerRequestWorkflow(
     background_job_id: jobId, workflow_run_id: null,
     reason: 'Workflow enqueued',
   }
-  await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result)
+  await logTriggerOutcome(svc, ctx, r.organization_id, 'request', r.id, 'request', result, auditInputs)
   return result
 }
 

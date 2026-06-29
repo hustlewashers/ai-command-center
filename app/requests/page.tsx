@@ -5,9 +5,15 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge } from '@/components/ui'
-import type { RequestRow } from '@/types/requests'
+import type { RequestRow, RequestRowWithWorkflow } from '@/types/requests'
 
 const ALL_STATUSES = ['received', 'triaged', 'in_progress', 'completed', 'rejected', 'cancelled'] as const
+
+// Colors for the latest-workflow-state cell.
+const WF_COLOR: Record<string, string> = {
+  pending: '#6b7280', running: '#2563eb', resuming: '#d97706',
+  completed: '#16a34a', failed: '#dc2626', cancelled: '#9ca3af',
+}
 
 type Lookup = { id: string; name: string }
 type CreatedRequest = RequestRow & {
@@ -16,7 +22,7 @@ type CreatedRequest = RequestRow & {
 
 export default function RequestsPage() {
   const router = useRouter()
-  const [requests, setRequests] = useState<RequestRow[]>([])
+  const [requests, setRequests] = useState<RequestRowWithWorkflow[]>([])
   const [intent, setIntent] = useState('')
   const [depts, setDepts] = useState<Lookup[]>([])
   const [projects, setProjects] = useState<Lookup[]>([])
@@ -35,7 +41,7 @@ export default function RequestsPage() {
   const loadRequests = useCallback(async () => {
     setLoadError(null)
     try {
-      const data = await apiGet<RequestRow[]>('/api/requests')
+      const data = await apiGet<RequestRowWithWorkflow[]>('/api/requests')
       setRequests(data)
     } catch (err) {
       if (err instanceof ApiClientError && err.isUnauthenticated) { router.push('/login'); return }
@@ -137,7 +143,7 @@ export default function RequestsPage() {
           <table style={s.table}>
             <thead>
               <tr>
-                {['id', 'intent', 'source', 'status', 'routed_dept', 'project', 'submitted_at', 'update'].map(col => (
+                {['id', 'intent', 'source', 'status', 'workflow', 'routed_dept', 'project', 'submitted_at', 'update'].map(col => (
                   <th key={col} style={s.th}>{col}</th>
                 ))}
               </tr>
@@ -155,6 +161,17 @@ export default function RequestsPage() {
                     <td style={{ ...s.td, maxWidth: '240px' }}>{r.intent}</td>
                     <td style={s.td}>{r.source}</td>
                     <td style={s.td}><StatusBadge status={r.status} /></td>
+                    <td style={s.td}>
+                      {r.workflow ? (
+                        <Link href={`/workflow-runs/${r.workflow.run_id}`} style={s.wfLink}>
+                          <span style={{ ...s.wfBadge, background: WF_COLOR[r.workflow.status] ?? '#6b7280' }}>
+                            {r.workflow.status}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span style={s.wfNone}>none</span>
+                      )}
+                    </td>
                     <td style={s.td}><code>{r.routed_department_id ? r.routed_department_id.slice(0, 8) + '…' : '—'}</code></td>
                     <td style={s.td}><code>{r.project_id ? r.project_id.slice(0, 8) + '…' : '—'}</code></td>
                     <td style={s.td}>{new Date(r.submitted_at).toLocaleString()}</td>
@@ -197,6 +214,9 @@ const s: Record<string, React.CSSProperties> = {
   select:   { padding: '0.4rem', fontFamily: 'monospace', fontSize: '0.85rem', border: '1px solid #ccc' },
   note:     { color: '#15803d', fontSize: '0.8rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '0.4rem 0.6rem' },
   idLink:   { color: '#2563eb', textDecoration: 'none' },
+  wfLink:   { textDecoration: 'none' },
+  wfBadge:  { display: 'inline-block', padding: '1px 7px', borderRadius: 3, fontSize: '0.68rem', fontWeight: 'bold', color: '#fff', whiteSpace: 'nowrap' },
+  wfNone:   { color: '#bbb', fontSize: '0.72rem' },
   btn:      { padding: '0.4rem 1rem', fontFamily: 'monospace', cursor: 'pointer', alignSelf: 'flex-start' },
   hr:       { margin: '1.5rem 0', borderColor: '#ddd' },
   muted:    { color: '#666', fontSize: '0.875rem' },
