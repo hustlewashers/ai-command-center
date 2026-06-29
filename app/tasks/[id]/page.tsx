@@ -3,15 +3,13 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/ui'
+import { EntityHeader, MetaGrid, RelatedList, DetailRow, Tag, ds } from '@/components/detail'
+import type { MetaItem } from '@/components/detail'
+import { formatDate, shortId, safeText } from '@/lib/ui/format'
 import type { TaskRow } from '@/types/tasks'
 
 const TASK_COLS =
   'id, organization_id, title, status, priority, department_id, project_id, request_id, work_packet_id, assigned_to_user_id, created_by, created_at, updated_at'
-
-function fmt(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 
 type ReqRel  = { id: string; intent: string; status: string }
 type WpRel   = { id: string; title: string; status: string; priority: string }
@@ -73,117 +71,102 @@ export default async function TaskDetailPage({
   const blockers      = (blkRes.data ?? []) as unknown as BlkRel[]
   const approvals     = (apprRes.data ?? []) as unknown as ApprRel[]
 
+  const dash = <span style={ds.empty}>—</span>
+  const fields: MetaItem[] = [
+    { label: 'Title', value: task.title, full: true },
+    { label: 'ID', value: <code style={{ wordBreak: 'break-all' }}>{task.id}</code> },
+    { label: 'Status', value: <StatusBadge status={task.status} /> },
+    { label: 'Priority', value: task.priority },
+    { label: 'Department', value: <code>{task.department_id}</code> },
+    { label: 'Project', value: <Link href={`/projects/${task.project_id}`} style={ds.link}>{shortId(task.project_id)}</Link> },
+    { label: 'Request', value: task.request_id ? <Link href={`/requests/${task.request_id}`} style={ds.link}>{shortId(task.request_id)}</Link> : dash },
+    { label: 'Assigned To', value: task.assigned_to_user_id ? <code>{shortId(task.assigned_to_user_id)}</code> : dash },
+    { label: 'Created By', value: <code>{shortId(task.created_by)}</code> },
+    { label: 'Created', value: formatDate(task.created_at) },
+    { label: 'Updated', value: formatDate(task.updated_at) },
+  ]
+
   return (
-    <div style={s.page}>
-      <div style={s.header}>
-        <Link href="/tasks" style={s.back}>← Tasks</Link>
-        <h1 style={s.h1}>Task Detail</h1>
-        <span style={{ marginLeft: 'auto' }}><StatusBadge status={task.status} /></span>
-        <span style={{ fontSize: 12, color: '#9ca3af' }}>{context.role}</span>
+    <div style={ds.page}>
+      <EntityHeader title="Task Detail" backHref="/tasks" backLabel="← Tasks" status={task.status} right={context.role} />
+
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Task</h2>
+        <MetaGrid items={fields} />
       </div>
 
-      {/* Fields */}
-      <div style={s.section}>
-        <h2 style={s.h2}>Task</h2>
-        <div style={s.grid}>
-          <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Title</div><div style={s.val}>{task.title}</div></div>
-          <div><div style={s.label}>ID</div><div style={{ ...s.val, wordBreak: 'break-all' }}><code>{task.id}</code></div></div>
-          <div><div style={s.label}>Status</div><div style={s.val}><StatusBadge status={task.status} /></div></div>
-          <div><div style={s.label}>Priority</div><div style={s.val}>{task.priority}</div></div>
-          <div><div style={s.label}>Department</div><div style={s.val}><code>{task.department_id}</code></div></div>
-          <div><div style={s.label}>Project</div><div style={s.val}><Link href={`/projects/${task.project_id}`} style={s.link}>{task.project_id.slice(0, 8)}…</Link></div></div>
-          <div>
-            <div style={s.label}>Request</div>
-            <div style={s.val}>{task.request_id ? <Link href={`/requests/${task.request_id}`} style={s.link}>{task.request_id.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div>
-          </div>
-          <div><div style={s.label}>Assigned To</div><div style={s.val}>{task.assigned_to_user_id ? <code>{task.assigned_to_user_id.slice(0, 8)}…</code> : <span style={s.empty}>—</span>}</div></div>
-          <div><div style={s.label}>Created By</div><div style={s.val}><code>{task.created_by.slice(0, 8)}…</code></div></div>
-          <div><div style={s.label}>Created</div><div style={s.val}>{fmt(task.created_at)}</div></div>
-          <div><div style={s.label}>Updated</div><div style={s.val}>{fmt(task.updated_at)}</div></div>
-        </div>
-      </div>
+      <RelatedList title="Parent Request" empty={!parentRequest} emptyLabel="No parent request.">
+        {parentRequest && (
+          <DetailRow>
+            <Link href={`/requests/${parentRequest.id}`} style={ds.link}>{shortId(parentRequest.id)}</Link>
+            <span style={ds.dim}>{safeText(parentRequest.intent, 80)}</span>
+            <StatusBadge status={parentRequest.status} />
+          </DetailRow>
+        )}
+      </RelatedList>
 
-      {/* Parent request */}
-      <Section title="Parent Request">
-        {parentRequest
-          ? <Row><Link href={`/requests/${parentRequest.id}`} style={s.link}>{parentRequest.id.slice(0, 8)}…</Link> <span style={s.dim}>{parentRequest.intent.slice(0, 80)}</span> <StatusBadge status={parentRequest.status} /></Row>
-          : <Empty>No parent request.</Empty>}
-      </Section>
-
-      {/* Work packets */}
-      <Section title={`Work Packets (${workPackets.length})`}>
-        {workPackets.length === 0 ? <Empty>No work packets.</Empty> : workPackets.map(w => (
-          <Row key={w.id}><Link href={`/work-packets/${w.id}`} style={s.link}>{w.id.slice(0, 8)}…</Link> <span style={s.dim}>{w.title.slice(0, 70)}</span> <StatusBadge status={w.status} /></Row>
+      <RelatedList title={`Work Packets (${workPackets.length})`} empty={workPackets.length === 0} emptyLabel="No work packets.">
+        {workPackets.map(w => (
+          <DetailRow key={w.id}>
+            <Link href={`/work-packets/${w.id}`} style={ds.link}>{shortId(w.id)}</Link>
+            <span style={ds.dim}>{safeText(w.title, 70)}</span>
+            <StatusBadge status={w.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Outputs */}
-      <Section title={`Outputs (${outputs.length})`}>
-        {outputs.length === 0 ? <Empty>No outputs.</Empty> : outputs.map(o => (
-          <Row key={o.id}><Link href={`/outputs/${o.id}`} style={s.link}>{o.id.slice(0, 8)}…</Link> <span style={s.dim}>{o.title.slice(0, 60)}</span> <code style={s.tag}>{o.output_type}</code> <StatusBadge status={o.status} /></Row>
+      <RelatedList title={`Outputs (${outputs.length})`} empty={outputs.length === 0} emptyLabel="No outputs.">
+        {outputs.map(o => (
+          <DetailRow key={o.id}>
+            <Link href={`/outputs/${o.id}`} style={ds.link}>{shortId(o.id)}</Link>
+            <span style={ds.dim}>{safeText(o.title, 60)}</span>
+            <Tag>{o.output_type}</Tag>
+            <StatusBadge status={o.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Decisions */}
-      <Section title={`Decisions (${decisions.length})`}>
-        {decisions.length === 0 ? <Empty>No decisions.</Empty> : decisions.map(d => (
-          <Row key={d.id}><Link href={`/decisions/${d.id}`} style={s.link}>{d.id.slice(0, 8)}…</Link> <span style={s.dim}>{(d.summary ?? '').slice(0, 70)}</span> <StatusBadge status={d.status} /></Row>
+      <RelatedList title={`Decisions (${decisions.length})`} empty={decisions.length === 0} emptyLabel="No decisions.">
+        {decisions.map(d => (
+          <DetailRow key={d.id}>
+            <Link href={`/decisions/${d.id}`} style={ds.link}>{shortId(d.id)}</Link>
+            <span style={ds.dim}>{safeText(d.summary, 70)}</span>
+            <StatusBadge status={d.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Blockers */}
-      <Section title={`Blockers (${blockers.length})`}>
-        {blockers.length === 0 ? <Empty>No blockers.</Empty> : blockers.map(b => (
-          <Row key={b.id}><Link href={`/blockers/${b.id}`} style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
+      <RelatedList title={`Blockers (${blockers.length})`} empty={blockers.length === 0} emptyLabel="No blockers.">
+        {blockers.map(b => (
+          <DetailRow key={b.id}>
+            <Link href={`/blockers/${b.id}`} style={ds.link}>{shortId(b.id)}</Link>
+            <span style={ds.dim}>{safeText(b.description, 60)}</span>
+            <Tag>{b.severity}</Tag>
+            <StatusBadge status={b.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Approvals */}
-      <Section title={`Approvals (${approvals.length})`}>
-        {approvals.length === 0 ? <Empty>No approvals.</Empty> : approvals.map(a => (
-          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
+      <RelatedList title={`Approvals (${approvals.length})`} empty={approvals.length === 0} emptyLabel="No approvals.">
+        {approvals.map(a => (
+          <DetailRow key={a.id}>
+            <Link href={`/approvals/${a.id}`} style={ds.link}>{shortId(a.id)}</Link>
+            <Tag>{a.category}</Tag>
+            <span style={ds.dim}>{safeText(a.trigger_reason, 60)}</span>
+            <StatusBadge status={a.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Workflow runs */}
-      <Section title={`Workflow Runs (${runs.length})`}>
-        {runs.length === 0 ? <Empty>No workflow runs reference this task.</Empty> : runs.map(r => (
-          <Row key={r.id}><Link href={`/workflow-runs/${r.id}`} style={s.link}>{r.id.slice(0, 8)}…</Link> <code style={s.tag}>{r.workflow_id}</code> <StatusBadge status={r.status} /></Row>
+      <RelatedList title={`Workflow Runs (${runs.length})`} empty={runs.length === 0} emptyLabel="No workflow runs reference this task.">
+        {runs.map(r => (
+          <DetailRow key={r.id}>
+            <Link href={`/workflow-runs/${r.id}`} style={ds.link}>{shortId(r.id)}</Link>
+            <Tag>{r.workflow_id}</Tag>
+            <StatusBadge status={r.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
     </div>
   )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={s.section}>
-      <h2 style={s.h2}>{title}</h2>
-      <div style={s.list}>{children}</div>
-    </div>
-  )
-}
-function Row({ children }: { children: React.ReactNode }) {
-  return <div style={s.rowItem}>{children}</div>
-}
-function Empty({ children }: { children: React.ReactNode }) {
-  return <div style={s.empty}>{children}</div>
-}
-
-const s: Record<string, React.CSSProperties> = {
-  page:    { padding: '24px', fontFamily: 'monospace', maxWidth: 1000 },
-  header:  { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
-  h1:      { fontSize: 20, fontWeight: 700, margin: 0 },
-  back:    { fontSize: 13, color: '#6b7280', textDecoration: 'none' },
-  section: { marginBottom: 22 },
-  h2:      { fontSize: 14, fontWeight: 700, color: '#374151', margin: '0 0 10px' },
-  grid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: 16 },
-  label:   { fontSize: 11, color: '#6b7280', marginBottom: 2 },
-  val:     { fontSize: 13 },
-  link:    { color: '#2563eb', textDecoration: 'none' },
-  list:    { display: 'flex', flexDirection: 'column', gap: 4 },
-  rowItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderBottom: '1px solid #f3f4f6', fontSize: 12, flexWrap: 'wrap' },
-  dim:     { color: '#6b7280' },
-  tag:     { background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, fontSize: 11 },
-  empty:   { color: '#9ca3af', fontSize: 12, padding: '4px 0' },
 }

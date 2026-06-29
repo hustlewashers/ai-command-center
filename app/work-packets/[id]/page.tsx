@@ -3,15 +3,13 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/ui'
+import { EntityHeader, MetaGrid, RelatedList, DetailRow, Tag, ds } from '@/components/detail'
+import type { MetaItem } from '@/components/detail'
+import { formatDate, shortId, safeText } from '@/lib/ui/format'
 import type { WorkPacketRow } from '@/types/work-packets'
 
 const WP_COLS =
   'id, organization_id, title, objective, status, priority, department_id, parent_type, parent_id, author_user_id, approval_required_before_start, created_at, updated_at'
-
-function fmt(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 
 type TaskRel = { id: string; title: string; status: string }
 type ProjRel = { id: string; name: string }
@@ -37,7 +35,7 @@ export default async function WorkPacketDetailPage({
   if (!wpData) notFound()
   const wp = wpData as unknown as WorkPacketRow
 
-  // Parent (task or project), blockers, workflow runs — all non-fatal.
+  // Parent (task or project), blockers, approvals, workflow runs — all non-fatal.
   // Note: outputs have no work_packet_id column (schema) — outputs attach to
   // tasks, not work packets, so there is no outputs section here.
   const [parentTaskRes, parentProjRes, blkRes, apprRes] = await Promise.all([
@@ -66,105 +64,86 @@ export default async function WorkPacketDetailPage({
   const blockers      = (blkRes.data ?? []) as unknown as BlkRel[]
   const approvals     = (apprRes.data ?? []) as unknown as ApprRel[]
 
+  const parentHref = wp.parent_type === 'task' ? `/tasks/${wp.parent_id}` : `/projects/${wp.parent_id}`
+  const fields: MetaItem[] = [
+    { label: 'Title', value: wp.title, full: true },
+    { label: 'Objective', value: wp.objective, full: true },
+    { label: 'ID', value: <code style={{ wordBreak: 'break-all' }}>{wp.id}</code> },
+    { label: 'Status', value: <StatusBadge status={wp.status} /> },
+    { label: 'Priority', value: wp.priority },
+    { label: 'Department', value: <code>{wp.department_id}</code> },
+    { label: 'Parent Type', value: wp.parent_type },
+    { label: 'Parent', value: <Link href={parentHref} style={ds.link}>{shortId(wp.parent_id)}</Link> },
+    { label: 'Author', value: <code>{shortId(wp.author_user_id)}</code> },
+    { label: 'Approval Required', value: wp.approval_required_before_start ? 'yes' : 'no' },
+    { label: 'Created', value: formatDate(wp.created_at) },
+    { label: 'Updated', value: formatDate(wp.updated_at) },
+  ]
+
+  // Parent section is empty when the parent row is not RLS-visible.
+  const parentVisible = wp.parent_type === 'task' ? !!parentTask : !!parentProject
+
   return (
-    <div style={s.page}>
-      <div style={s.header}>
-        <Link href="/work-packets" style={s.back}>← Work Packets</Link>
-        <h1 style={s.h1}>Work Packet Detail</h1>
-        <span style={{ marginLeft: 'auto' }}><StatusBadge status={wp.status} /></span>
-        <span style={{ fontSize: 12, color: '#9ca3af' }}>{context.role}</span>
+    <div style={ds.page}>
+      <EntityHeader title="Work Packet Detail" backHref="/work-packets" backLabel="← Work Packets" status={wp.status} right={context.role} />
+
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Work Packet</h2>
+        <MetaGrid items={fields} />
       </div>
 
-      {/* Fields */}
-      <div style={s.section}>
-        <h2 style={s.h2}>Work Packet</h2>
-        <div style={s.grid}>
-          <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Title</div><div style={s.val}>{wp.title}</div></div>
-          <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Objective</div><div style={s.val}>{wp.objective}</div></div>
-          <div><div style={s.label}>ID</div><div style={{ ...s.val, wordBreak: 'break-all' }}><code>{wp.id}</code></div></div>
-          <div><div style={s.label}>Status</div><div style={s.val}><StatusBadge status={wp.status} /></div></div>
-          <div><div style={s.label}>Priority</div><div style={s.val}>{wp.priority}</div></div>
-          <div><div style={s.label}>Department</div><div style={s.val}><code>{wp.department_id}</code></div></div>
-          <div><div style={s.label}>Parent Type</div><div style={s.val}>{wp.parent_type}</div></div>
-          <div>
-            <div style={s.label}>Parent</div>
-            <div style={s.val}>
-              {wp.parent_type === 'task'
-                ? <Link href={`/tasks/${wp.parent_id}`} style={s.link}>{wp.parent_id.slice(0, 8)}…</Link>
-                : <Link href={`/projects/${wp.parent_id}`} style={s.link}>{wp.parent_id.slice(0, 8)}…</Link>}
-            </div>
-          </div>
-          <div><div style={s.label}>Author</div><div style={s.val}><code>{wp.author_user_id.slice(0, 8)}…</code></div></div>
-          <div><div style={s.label}>Approval Required</div><div style={s.val}>{wp.approval_required_before_start ? 'yes' : 'no'}</div></div>
-          <div><div style={s.label}>Created</div><div style={s.val}>{fmt(wp.created_at)}</div></div>
-          <div><div style={s.label}>Updated</div><div style={s.val}>{fmt(wp.updated_at)}</div></div>
-        </div>
-      </div>
+      <RelatedList
+        title="Parent"
+        empty={!parentVisible}
+        emptyLabel={wp.parent_type === 'task' ? 'Parent task not visible.' : 'Parent project not visible.'}
+      >
+        {wp.parent_type === 'task' && parentTask && (
+          <DetailRow>
+            <Link href={`/tasks/${parentTask.id}`} style={ds.link}>{shortId(parentTask.id)}</Link>
+            <span style={ds.dim}>{safeText(parentTask.title, 70)}</span>
+            <StatusBadge status={parentTask.status} />
+          </DetailRow>
+        )}
+        {wp.parent_type === 'project' && parentProject && (
+          <DetailRow>
+            <Link href={`/projects/${parentProject.id}`} style={ds.link}>{shortId(parentProject.id)}</Link>
+            <span style={ds.dim}>{parentProject.name}</span>
+            <Tag>project</Tag>
+          </DetailRow>
+        )}
+      </RelatedList>
 
-      {/* Parent */}
-      <Section title="Parent">
-        {wp.parent_type === 'task'
-          ? (parentTask
-              ? <Row><Link href={`/tasks/${parentTask.id}`} style={s.link}>{parentTask.id.slice(0, 8)}…</Link> <span style={s.dim}>{parentTask.title.slice(0, 70)}</span> <StatusBadge status={parentTask.status} /></Row>
-              : <Empty>Parent task not visible.</Empty>)
-          : (parentProject
-              ? <Row><Link href={`/projects/${parentProject.id}`} style={s.link}>{parentProject.id.slice(0, 8)}…</Link> <span style={s.dim}>{parentProject.name}</span> <span style={s.tag}>project</span></Row>
-              : <Empty>Parent project not visible.</Empty>)}
-      </Section>
-
-      {/* Blockers */}
-      <Section title={`Blockers (${blockers.length})`}>
-        {blockers.length === 0 ? <Empty>No blockers.</Empty> : blockers.map(b => (
-          <Row key={b.id}><Link href={`/blockers/${b.id}`} style={s.link}>{b.id.slice(0, 8)}…</Link> <span style={s.dim}>{(b.description ?? '').slice(0, 60)}</span> <code style={s.tag}>{b.severity}</code> <StatusBadge status={b.status} /></Row>
+      <RelatedList title={`Blockers (${blockers.length})`} empty={blockers.length === 0} emptyLabel="No blockers.">
+        {blockers.map(b => (
+          <DetailRow key={b.id}>
+            <Link href={`/blockers/${b.id}`} style={ds.link}>{shortId(b.id)}</Link>
+            <span style={ds.dim}>{safeText(b.description, 60)}</span>
+            <Tag>{b.severity}</Tag>
+            <StatusBadge status={b.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Approvals */}
-      <Section title={`Approvals (${approvals.length})`}>
-        {approvals.length === 0 ? <Empty>No approvals.</Empty> : approvals.map(a => (
-          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
+      <RelatedList title={`Approvals (${approvals.length})`} empty={approvals.length === 0} emptyLabel="No approvals.">
+        {approvals.map(a => (
+          <DetailRow key={a.id}>
+            <Link href={`/approvals/${a.id}`} style={ds.link}>{shortId(a.id)}</Link>
+            <Tag>{a.category}</Tag>
+            <span style={ds.dim}>{safeText(a.trigger_reason, 60)}</span>
+            <StatusBadge status={a.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      {/* Workflow runs */}
-      <Section title={`Workflow Runs (${runs.length})`}>
-        {runs.length === 0 ? <Empty>No workflow runs reference this work packet.</Empty> : runs.map(r => (
-          <Row key={r.id}><Link href={`/workflow-runs/${r.id}`} style={s.link}>{r.id.slice(0, 8)}…</Link> <code style={s.tag}>{r.workflow_id}</code> <StatusBadge status={r.status} /></Row>
+      <RelatedList title={`Workflow Runs (${runs.length})`} empty={runs.length === 0} emptyLabel="No workflow runs reference this work packet.">
+        {runs.map(r => (
+          <DetailRow key={r.id}>
+            <Link href={`/workflow-runs/${r.id}`} style={ds.link}>{shortId(r.id)}</Link>
+            <Tag>{r.workflow_id}</Tag>
+            <StatusBadge status={r.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
     </div>
   )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={s.section}>
-      <h2 style={s.h2}>{title}</h2>
-      <div style={s.list}>{children}</div>
-    </div>
-  )
-}
-function Row({ children }: { children: React.ReactNode }) {
-  return <div style={s.rowItem}>{children}</div>
-}
-function Empty({ children }: { children: React.ReactNode }) {
-  return <div style={s.empty}>{children}</div>
-}
-
-const s: Record<string, React.CSSProperties> = {
-  page:    { padding: '24px', fontFamily: 'monospace', maxWidth: 1000 },
-  header:  { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
-  h1:      { fontSize: 20, fontWeight: 700, margin: 0 },
-  back:    { fontSize: 13, color: '#6b7280', textDecoration: 'none' },
-  section: { marginBottom: 22 },
-  h2:      { fontSize: 14, fontWeight: 700, color: '#374151', margin: '0 0 10px' },
-  grid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: 16 },
-  label:   { fontSize: 11, color: '#6b7280', marginBottom: 2 },
-  val:     { fontSize: 13 },
-  link:    { color: '#2563eb', textDecoration: 'none' },
-  list:    { display: 'flex', flexDirection: 'column', gap: 4 },
-  rowItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderBottom: '1px solid #f3f4f6', fontSize: 12, flexWrap: 'wrap' },
-  dim:     { color: '#6b7280' },
-  tag:     { background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, fontSize: 11 },
-  empty:   { color: '#9ca3af', fontSize: 12, padding: '4px 0' },
 }
