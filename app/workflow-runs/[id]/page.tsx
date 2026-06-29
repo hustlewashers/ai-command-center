@@ -10,6 +10,9 @@ import type {
 } from '@/types/workflow-runs'
 import type { ExecutionLogRow } from '@/types/execution-logs'
 import { getRecoveryEligibility } from '@/lib/workflows/recovery'
+import { EntityHeader, MetaGrid, TraceLinks, ds } from '@/components/detail'
+import type { MetaItem } from '@/components/detail'
+import { formatMs, jsonPreview, shortId } from '@/lib/ui/format'
 import WorkflowRecoveryActions from './WorkflowRecoveryActions'
 
 const RECOVERY_ROLES = new Set(['org_admin', 'department_lead'])
@@ -56,25 +59,14 @@ const STEP_STATUS_COLOR: Record<WorkflowStepRunStatus, string> = {
   skipped:   '#9ca3af',
 }
 
+// Page-specific: this diagnostic page shows SECONDS precision (the shared
+// formatDate omits seconds), so it keeps its own timestamp formatter.
 function fmt(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString(undefined, {
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
-}
-
-function durationStr(ms: number | null): string {
-  if (ms === null) return '—'
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  return `${(ms / 60000).toFixed(1)}m`
-}
-
-function jsonPreview(obj: Record<string, unknown> | null): string {
-  if (!obj || Object.keys(obj).length === 0) return '{}'
-  const str = JSON.stringify(obj, null, 2)
-  return str.length > 400 ? str.slice(0, 400) + '\n…' : str
 }
 
 export default async function WorkflowRunDetailPage({
@@ -129,33 +121,34 @@ export default async function WorkflowRunDetailPage({
     background: RUN_STATUS_COLOR[run.status] ?? '#6b7280',
   }
 
-  const s = {
-    page:      { padding: '24px', fontFamily: 'monospace', maxWidth: 1200 } as React.CSSProperties,
-    header:    { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' as const } as React.CSSProperties,
-    h1:        { fontSize: 20, fontWeight: 700, margin: 0 } as React.CSSProperties,
-    back:      { fontSize: 13, color: '#6b7280', textDecoration: 'none' } as React.CSSProperties,
-    section:   { marginBottom: 28 } as React.CSSProperties,
-    sectionH:  { fontSize: 14, fontWeight: 700, color: '#374151', margin: '0 0 10px' } as React.CSSProperties,
-    metaGrid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: 16 } as React.CSSProperties,
-    metaLabel: { fontSize: 11, color: '#6b7280', marginBottom: 2 } as React.CSSProperties,
-    metaVal:   { fontSize: 13 } as React.CSSProperties,
-    errBox:    { background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '10px 14px', marginBottom: 20 } as React.CSSProperties,
-    errMsg:    { color: '#dc2626', fontSize: 13, margin: 0, wordBreak: 'break-all' as const } as React.CSSProperties,
-    table:     { width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 } as React.CSSProperties,
-    th:        { textAlign: 'left' as const, padding: '7px 10px', borderBottom: '2px solid #e5e7eb', fontWeight: 600, color: '#374151', background: '#f9fafb' } as React.CSSProperties,
-    td:        { padding: '7px 10px', borderBottom: '1px solid #f3f4f6', verticalAlign: 'top' as const } as React.CSSProperties,
-    pre:       { margin: 0, fontSize: 11, background: '#f3f4f6', padding: '4px 6px', borderRadius: 3, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-all' as const } as React.CSSProperties,
-    empty:     { padding: 20, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 } as React.CSSProperties,
-  }
+  const runFields: MetaItem[] = [
+    { label: 'Run ID', value: <code style={{ wordBreak: 'break-all' }}>{run.id}</code> },
+    { label: 'Workflow', value: <code>{run.workflow_id}</code> },
+    { label: 'Version', value: run.workflow_version },
+    { label: 'Status', value: <span style={runBadge}>{run.status}</span> },
+    { label: 'Started', value: fmt(run.started_at) },
+    { label: 'Ended', value: fmt(endedAt) },
+    { label: 'Duration', value: totalMs !== null ? formatMs(totalMs) : '—' },
+    { label: 'Current Step', value: `${run.current_step_id ?? '—'}${run.current_step_index !== null ? ` (#${run.current_step_index})` : ''}` },
+    { label: 'Retry Count', value: run.retry_count },
+    { label: 'Trigger Type', value: run.trigger_type ?? '—' },
+    { label: 'Trigger Entity', value: run.trigger_entity_type
+        ? <><code>{run.trigger_entity_type}</code> <code style={{ color: '#9ca3af', fontSize: 11 }}>{run.trigger_entity_id ?? '—'}</code></>
+        : '—' },
+    { label: 'Background Job', value: run.background_job_id ? <Link href="/background-jobs" style={ds.link}>{shortId(run.background_job_id, 16)}</Link> : '—' },
+    ...(run.parent_run_id ? [{ label: 'Parent Run', value: <Link href={`/workflow-runs/${run.parent_run_id}`} style={ds.link}>{shortId(run.parent_run_id, 16)}</Link> }] as MetaItem[] : []),
+    { label: 'Created', value: fmt(run.created_at) },
+  ]
 
   return (
-    <div style={s.page}>
-      <div style={s.header}>
-        <Link href="/workflow-runs" style={s.back}>← Workflow Runs</Link>
-        <h1 style={s.h1}>Run Detail</h1>
-        <span style={runBadge}>{run.status}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9ca3af' }}>{context.role}</span>
-      </div>
+    <div style={{ ...ds.page, maxWidth: 1200 }}>
+      <EntityHeader
+        title="Run Detail"
+        backHref="/workflow-runs"
+        backLabel="← Workflow Runs"
+        actions={<span style={runBadge}>{run.status}</span>}
+        right={context.role}
+      />
 
       {run.error_message && (
         <div style={s.errBox}>
@@ -172,118 +165,24 @@ export default async function WorkflowRunDetailPage({
 
       {/* Run Summary */}
       <div style={s.section}>
-        <h2 style={s.sectionH}>Run Summary</h2>
-        <div style={s.metaGrid}>
-          <div>
-            <div style={s.metaLabel}>Run ID</div>
-            <div style={{ ...s.metaVal, wordBreak: 'break-all' }}><code>{run.id}</code></div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Workflow</div>
-            <div style={s.metaVal}><code>{run.workflow_id}</code></div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Version</div>
-            <div style={s.metaVal}>{run.workflow_version}</div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Status</div>
-            <div style={s.metaVal}><span style={runBadge}>{run.status}</span></div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Started</div>
-            <div style={s.metaVal}>{fmt(run.started_at)}</div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Ended</div>
-            <div style={s.metaVal}>{fmt(endedAt)}</div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Duration</div>
-            <div style={s.metaVal}>{totalMs !== null ? durationStr(totalMs) : '—'}</div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Current Step</div>
-            <div style={s.metaVal}>
-              {run.current_step_id ?? '—'}
-              {run.current_step_index !== null ? ` (#${run.current_step_index})` : ''}
-            </div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Retry Count</div>
-            <div style={s.metaVal}>{run.retry_count}</div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Trigger Type</div>
-            <div style={s.metaVal}>{run.trigger_type ?? '—'}</div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Trigger Entity</div>
-            <div style={s.metaVal}>
-              {run.trigger_entity_type
-                ? (
-                  <>
-                    <code>{run.trigger_entity_type}</code>
-                    {' '}
-                    <code style={{ color: '#9ca3af', fontSize: 11 }}>{run.trigger_entity_id ?? '—'}</code>
-                  </>
-                )
-                : '—'
-              }
-            </div>
-          </div>
-          <div>
-            <div style={s.metaLabel}>Background Job</div>
-            <div style={s.metaVal}>
-              {run.background_job_id
-                ? <Link href="/background-jobs" style={{ color: '#2563eb' }}>{run.background_job_id.slice(0, 16)}…</Link>
-                : '—'
-              }
-            </div>
-          </div>
-          {run.parent_run_id && (
-            <div>
-              <div style={s.metaLabel}>Parent Run</div>
-              <div style={s.metaVal}>
-                <Link href={`/workflow-runs/${run.parent_run_id}`} style={{ color: '#2563eb' }}>
-                  {run.parent_run_id.slice(0, 16)}…
-                </Link>
-              </div>
-            </div>
-          )}
-          <div>
-            <div style={s.metaLabel}>Created</div>
-            <div style={s.metaVal}>{fmt(run.created_at)}</div>
-          </div>
-        </div>
+        <h2 style={ds.h2}>Run Summary</h2>
+        <MetaGrid items={runFields} />
       </div>
 
-      {/* Linked entities from accumulated */}
+      {/* Linked entities from accumulated (TraceLinks; renders nothing if none) */}
       {(linkedTaskId || linkedWpId) && (
         <div style={{ ...s.section, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ ...s.sectionH, margin: 0 }}>Linked Entities</h2>
-          {linkedTaskId && (
-            <Link
-              href={`/tasks/${linkedTaskId}`}
-              style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '4px 10px', fontSize: 12, color: '#2563eb', textDecoration: 'none' }}
-            >
-              Task {linkedTaskId.slice(0, 8)}…
-            </Link>
-          )}
-          {linkedWpId && (
-            <Link
-              href={`/work-packets/${linkedWpId}`}
-              style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 4, padding: '4px 10px', fontSize: 12, color: '#16a34a', textDecoration: 'none' }}
-            >
-              Work Packet {linkedWpId.slice(0, 8)}…
-            </Link>
-          )}
+          <h2 style={{ ...ds.h2, margin: 0 }}>Linked Entities</h2>
+          <TraceLinks links={[
+            { type: 'task', id: linkedTaskId },
+            { type: 'work_packet', id: linkedWpId },
+          ]} />
         </div>
       )}
 
-      {/* Step Timeline */}
+      {/* Step Timeline — bespoke table kept intentionally (per-step diagnostics) */}
       <div style={s.section}>
-        <h2 style={s.sectionH}>Step Timeline ({steps.length} step{steps.length !== 1 ? 's' : ''})</h2>
+        <h2 style={ds.h2}>Step Timeline ({steps.length} step{steps.length !== 1 ? 's' : ''})</h2>
         {steps.length === 0 ? (
           <div style={s.empty}>No step runs recorded.</div>
         ) : (
@@ -315,13 +214,13 @@ export default async function WorkflowRunDetailPage({
                     <td style={s.td}><code>{step.step_id}</code></td>
                     <td style={s.td}><code>{step.step_type}</code></td>
                     <td style={s.td}><span style={stepBadge}>{step.status}</span></td>
-                    <td style={s.td}>{durationStr(step.duration_ms)}</td>
+                    <td style={s.td}>{formatMs(step.duration_ms)}</td>
                     <td style={s.td}>{fmt(step.started_at)}</td>
                     <td style={s.td}>{fmt(step.completed_at)}</td>
                     <td style={s.td}>{step.retry_count}</td>
                     <td style={s.td}>
                       {step.output_payload && Object.keys(step.output_payload).length > 0
-                        ? <pre style={s.pre}>{jsonPreview(step.output_payload)}</pre>
+                        ? <pre style={s.pre}>{jsonPreview(step.output_payload, 400)}</pre>
                         : '—'
                       }
                     </td>
@@ -339,9 +238,9 @@ export default async function WorkflowRunDetailPage({
         )}
       </div>
 
-      {/* Execution Logs */}
+      {/* Execution Logs — bespoke table kept intentionally */}
       <div style={s.section}>
-        <h2 style={s.sectionH}>Execution Logs ({logs.length})</h2>
+        <h2 style={ds.h2}>Execution Logs ({logs.length})</h2>
         {logsRes.error && (
           <p style={{ color: '#6b7280', fontSize: 12, marginBottom: 8 }}>
             Note: log filter unavailable — {logsRes.error.message}
@@ -376,4 +275,16 @@ export default async function WorkflowRunDetailPage({
       </div>
     </div>
   )
+}
+
+// Page-specific styles: wider section spacing + the two bespoke diagnostic tables.
+const s: Record<string, React.CSSProperties> = {
+  section: { marginBottom: 28 },
+  errBox:  { background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '10px 14px', marginBottom: 20 },
+  errMsg:  { color: '#dc2626', fontSize: 13, margin: 0, wordBreak: 'break-all' },
+  table:   { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
+  th:      { textAlign: 'left', padding: '7px 10px', borderBottom: '2px solid #e5e7eb', fontWeight: 600, color: '#374151', background: '#f9fafb' },
+  td:      { padding: '7px 10px', borderBottom: '1px solid #f3f4f6', verticalAlign: 'top' },
+  pre:     { margin: 0, fontSize: 11, background: '#f3f4f6', padding: '4px 6px', borderRadius: 3, maxHeight: 120, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' },
+  empty:   { padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 13 },
 }

@@ -3,15 +3,13 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/ui'
+import { EntityHeader, MetaGrid, RelatedList, DetailRow, Tag, ds } from '@/components/detail'
+import type { MetaItem } from '@/components/detail'
+import { formatDate, shortId, safeText } from '@/lib/ui/format'
 import type { OutputRow } from '@/types/outputs'
 
 const OUTPUT_COLS =
   'id, organization_id, title, output_type, status, department_id, project_id, task_id, created_by_user_id, content, storage_path, produced_at, delivered_at, created_at, updated_at'
-
-function fmt(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 
 type ApprRel = { id: string; category: string; status: string; trigger_reason: string }
 type RunRel  = { id: string; workflow_id: string; status: string }
@@ -53,84 +51,57 @@ export default async function OutputDetailPage({
   const project  = (projRes.data ?? null) as { id: string; name: string } | null
   const approvals = (apprRes.data ?? []) as unknown as ApprRel[]
 
-  return (
-    <div style={s.page}>
-      <div style={s.header}>
-        <Link href="/outputs" style={s.back}>← Outputs</Link>
-        <h1 style={s.h1}>Output Detail</h1>
-        <span style={{ marginLeft: 'auto' }}><StatusBadge status={output.status} /></span>
-        <span style={{ fontSize: 12, color: '#9ca3af' }}>{context.role}</span>
-      </div>
+  const fields: MetaItem[] = [
+    { label: 'Title', value: output.title, full: true },
+    { label: 'ID', value: <code style={{ wordBreak: 'break-all' }}>{output.id}</code> },
+    { label: 'Type', value: output.output_type },
+    { label: 'Status', value: <StatusBadge status={output.status} /> },
+    { label: 'Department', value: <code>{output.department_id}</code> },
+    { label: 'Project', value: <Link href={`/projects/${output.project_id}`} style={ds.link}>{project ? project.name : shortId(output.project_id)}</Link> },
+    { label: 'Task', value: <Link href={`/tasks/${output.task_id}`} style={ds.link}>{task ? safeText(task.title, 30) : shortId(output.task_id)}</Link> },
+    { label: 'Created By', value: output.created_by_user_id ? <code>{shortId(output.created_by_user_id)}</code> : <span style={ds.empty}>—</span> },
+    { label: 'Produced', value: formatDate(output.produced_at) },
+    { label: 'Delivered', value: formatDate(output.delivered_at) },
+    { label: 'Created', value: formatDate(output.created_at) },
+    { label: 'Updated', value: formatDate(output.updated_at) },
+    ...(output.storage_path ? [{ label: 'Storage Path', value: <code style={{ wordBreak: 'break-all' }}>{output.storage_path}</code>, full: true }] as MetaItem[] : []),
+  ]
 
-      <div style={s.section}>
-        <h2 style={s.h2}>Output</h2>
-        <div style={s.grid}>
-          <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Title</div><div style={s.val}>{output.title}</div></div>
-          <div><div style={s.label}>ID</div><div style={{ ...s.val, wordBreak: 'break-all' }}><code>{output.id}</code></div></div>
-          <div><div style={s.label}>Type</div><div style={s.val}>{output.output_type}</div></div>
-          <div><div style={s.label}>Status</div><div style={s.val}><StatusBadge status={output.status} /></div></div>
-          <div><div style={s.label}>Department</div><div style={s.val}><code>{output.department_id}</code></div></div>
-          <div>
-            <div style={s.label}>Project</div>
-            <div style={s.val}><Link href={`/projects/${output.project_id}`} style={s.link}>{project ? project.name : output.project_id.slice(0, 8) + '…'}</Link></div>
-          </div>
-          <div>
-            <div style={s.label}>Task</div>
-            <div style={s.val}><Link href={`/tasks/${output.task_id}`} style={s.link}>{task ? task.title.slice(0, 30) : output.task_id.slice(0, 8) + '…'}</Link></div>
-          </div>
-          <div><div style={s.label}>Created By</div><div style={s.val}>{output.created_by_user_id ? <code>{output.created_by_user_id.slice(0, 8)}…</code> : <span style={s.empty}>—</span>}</div></div>
-          <div><div style={s.label}>Produced</div><div style={s.val}>{fmt(output.produced_at)}</div></div>
-          <div><div style={s.label}>Delivered</div><div style={s.val}>{fmt(output.delivered_at)}</div></div>
-          <div><div style={s.label}>Created</div><div style={s.val}>{fmt(output.created_at)}</div></div>
-          <div><div style={s.label}>Updated</div><div style={s.val}>{fmt(output.updated_at)}</div></div>
-          {output.storage_path && (
-            <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Storage Path</div><div style={{ ...s.val, wordBreak: 'break-all' }}><code>{output.storage_path}</code></div></div>
-          )}
-        </div>
+  return (
+    <div style={ds.page}>
+      <EntityHeader title="Output Detail" backHref="/outputs" backLabel="← Outputs" status={output.status} right={context.role} />
+
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Output</h2>
+        <MetaGrid items={fields} />
         {output.content && (
           <div style={{ marginTop: 12 }}>
-            <div style={s.label}>Content Preview</div>
-            <pre style={s.pre}>{output.content.slice(0, 1000)}{output.content.length > 1000 ? '\n…' : ''}</pre>
+            <div style={ds.label}>Content Preview</div>
+            <pre style={ds.pre}>{output.content.slice(0, 1000)}{output.content.length > 1000 ? '\n…' : ''}</pre>
           </div>
         )}
       </div>
 
-      <Section title={`Approvals (${approvals.length})`}>
-        {approvals.length === 0 ? <Empty>No approvals for this output.</Empty> : approvals.map(a => (
-          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
+      <RelatedList title={`Approvals (${approvals.length})`} empty={approvals.length === 0} emptyLabel="No approvals for this output.">
+        {approvals.map(a => (
+          <DetailRow key={a.id}>
+            <Link href={`/approvals/${a.id}`} style={ds.link}>{shortId(a.id)}</Link>
+            <Tag>{a.category}</Tag>
+            <span style={ds.dim}>{safeText(a.trigger_reason, 60)}</span>
+            <StatusBadge status={a.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      <Section title={`Workflow Runs (${runs.length})`}>
-        {runs.length === 0 ? <Empty>No workflow runs reference this output.</Empty> : runs.map(r => (
-          <Row key={r.id}><Link href={`/workflow-runs/${r.id}`} style={s.link}>{r.id.slice(0, 8)}…</Link> <code style={s.tag}>{r.workflow_id}</code> <StatusBadge status={r.status} /></Row>
+      <RelatedList title={`Workflow Runs (${runs.length})`} empty={runs.length === 0} emptyLabel="No workflow runs reference this output.">
+        {runs.map(r => (
+          <DetailRow key={r.id}>
+            <Link href={`/workflow-runs/${r.id}`} style={ds.link}>{shortId(r.id)}</Link>
+            <Tag>{r.workflow_id}</Tag>
+            <StatusBadge status={r.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
     </div>
   )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div style={s.section}><h2 style={s.h2}>{title}</h2><div style={s.list}>{children}</div></div>
-}
-function Row({ children }: { children: React.ReactNode }) { return <div style={s.rowItem}>{children}</div> }
-function Empty({ children }: { children: React.ReactNode }) { return <div style={s.empty}>{children}</div> }
-
-const s: Record<string, React.CSSProperties> = {
-  page:    { padding: '24px', fontFamily: 'monospace', maxWidth: 1000 },
-  header:  { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
-  h1:      { fontSize: 20, fontWeight: 700, margin: 0 },
-  back:    { fontSize: 13, color: '#6b7280', textDecoration: 'none' },
-  section: { marginBottom: 22 },
-  h2:      { fontSize: 14, fontWeight: 700, color: '#374151', margin: '0 0 10px' },
-  grid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: 16 },
-  label:   { fontSize: 11, color: '#6b7280', marginBottom: 2 },
-  val:     { fontSize: 13 },
-  link:    { color: '#2563eb', textDecoration: 'none' },
-  list:    { display: 'flex', flexDirection: 'column', gap: 4 },
-  rowItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderBottom: '1px solid #f3f4f6', fontSize: 12, flexWrap: 'wrap' },
-  dim:     { color: '#6b7280' },
-  tag:     { background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, fontSize: 11 },
-  empty:   { color: '#9ca3af', fontSize: 12, padding: '4px 0' },
-  pre:     { margin: 0, fontSize: 11, background: '#f3f4f6', padding: '8px 10px', borderRadius: 4, maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
 }

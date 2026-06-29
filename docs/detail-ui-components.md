@@ -124,23 +124,42 @@ Pure, dependency-free.
 
 ---
 
-## Refactor status & plan
+## Refactor status
 
-**Refactored to shared components (Sprint 5.15):**
-- `app/tasks/[id]/page.tsx`
-- `app/work-packets/[id]/page.tsx`
-- `app/approvals/[id]/page.tsx` (optional page; kept the bespoke Subject box + `ApprovalActions`)
+**All detail pages now use the shared components.**
 
-**Not yet refactored (still use local inline scaffolding — identical output):**
-- `app/requests/[id]/page.tsx`
-- `app/outputs/[id]/page.tsx`
-- `app/decisions/[id]/page.tsx`
-- `app/blockers/[id]/page.tsx`
-- `app/projects/[id]/page.tsx`
-- `app/workflow-runs/[id]/page.tsx`
+| Page | Migrated | Notes |
+|---|---|---|
+| `app/tasks/[id]` | 5.15 | |
+| `app/work-packets/[id]` | 5.15 | |
+| `app/approvals/[id]` | 5.15 | bespoke Subject box + `ApprovalActions` kept |
+| `app/decisions/[id]` | 5.16 | |
+| `app/blockers/[id]` | 5.16 | |
+| `app/outputs/[id]` | 5.16 | plain-text content uses `<pre style={ds.pre}>` (not `JsonPreview` — content isn't JSON) |
+| `app/projects/[id]` | 5.16 | |
+| `app/requests/[id]` | 5.16 | kept page-specific workflow badge, `deriveAction`, Recovery-History table; preserved `RequestWorkflowActions` / `RequestWorkflowRecovery` |
+| `app/workflow-runs/[id]` | 5.16 | most complex — see below |
 
-**Future plan:** migrate the remaining pages one at a time, verifying each renders
-identically (typecheck + lint + a route smoke test) before moving on. Pages with
-bespoke sections (e.g. workflow-runs step timeline, request recovery panel) keep those
-sections inline and adopt only `EntityHeader` + `MetaGrid` + `RelatedList`. The goal is
-prove-then-spread, not a big-bang rewrite.
+## Guidance for complex diagnostic pages (e.g. Workflow Run detail)
+
+Some pages legitimately keep bespoke parts. Rules of thumb from the 5.16 migration:
+
+- **Wide pages:** keep their own `maxWidth` by spreading `ds.page` and overriding,
+  e.g. `style={{ ...ds.page, maxWidth: 1200 }}`. Don't force every page to 1000.
+- **Custom-colored status pills** (workflow/run status) are page-specific — pass them
+  to `EntityHeader`'s `actions` slot (raw, no wrapper) rather than the `status` prop,
+  which renders the neutral `StatusBadge`.
+- **Multi-column diagnostic tables** (step timeline, execution logs, recovery-history
+  lineage) do **not** fit `RelatedList` — keep them as bespoke `<table>`s with local
+  styles. Do not over-abstract them.
+- **Timing precision:** the shared `formatDate` omits seconds. Pages that need
+  second-level precision keep a local formatter (workflow-run detail does). Use
+  `formatMs` for `duration_ms` columns.
+- **JSON cells:** the `JsonPreview` component uses `ds.pre` (taller). For compact
+  in-table cells, keep a local `<pre>` and reuse the `jsonPreview` **helper** from
+  `lib/ui/format` for the string. Reserve the `JsonPreview` **component** for
+  standalone JSON blocks.
+- **Trace pills:** use `TraceLinks` for "linked entity" rows. Note all pills render in
+  the same blue `ds.pill` style (the previous per-type colors are normalized).
+- **Page-specific helpers** that are genuinely not shared (e.g. `deriveAction`,
+  colored-pill builders, local table styles) stay co-located with the page.

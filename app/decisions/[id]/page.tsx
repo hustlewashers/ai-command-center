@@ -3,15 +3,13 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/ui'
+import { EntityHeader, MetaGrid, RelatedList, DetailRow, Tag, ds } from '@/components/detail'
+import type { MetaItem } from '@/components/detail'
+import { formatDate, shortId, safeText } from '@/lib/ui/format'
 import type { DecisionRow } from '@/types/decisions'
 
 const DECISION_COLS =
   'id, organization_id, task_id, summary, rationale, status, decided_by_user_id, decided_at, created_at, updated_at'
-
-function fmt(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 
 type ApprRel = { id: string; category: string; status: string; trigger_reason: string }
 type RunRel  = { id: string; workflow_id: string; status: string }
@@ -51,74 +49,57 @@ export default async function DecisionDetailPage({
   const task      = (taskRes.data ?? null) as { id: string; title: string; status: string } | null
   const approvals = (apprRes.data ?? []) as unknown as ApprRel[]
 
+  const fields: MetaItem[] = [
+    { label: 'Summary', value: decision.summary, full: true },
+    { label: 'Rationale', value: decision.rationale, full: true },
+    { label: 'ID', value: <code style={{ wordBreak: 'break-all' }}>{decision.id}</code> },
+    { label: 'Status', value: <StatusBadge status={decision.status} /> },
+    { label: 'Task', value: <Link href={`/tasks/${decision.task_id}`} style={ds.link}>{task ? safeText(task.title, 30) : shortId(decision.task_id)}</Link> },
+    { label: 'Decided By', value: decision.decided_by_user_id ? <code>{shortId(decision.decided_by_user_id)}</code> : <span style={ds.empty}>—</span> },
+    { label: 'Decided At', value: formatDate(decision.decided_at) },
+    { label: 'Created', value: formatDate(decision.created_at) },
+    { label: 'Updated', value: formatDate(decision.updated_at) },
+  ]
+
   return (
-    <div style={s.page}>
-      <div style={s.header}>
-        <Link href="/decisions" style={s.back}>← Decisions</Link>
-        <h1 style={s.h1}>Decision Detail</h1>
-        <span style={{ marginLeft: 'auto' }}><StatusBadge status={decision.status} /></span>
-        <span style={{ fontSize: 12, color: '#9ca3af' }}>{context.role}</span>
+    <div style={ds.page}>
+      <EntityHeader title="Decision Detail" backHref="/decisions" backLabel="← Decisions" status={decision.status} right={context.role} />
+
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Decision</h2>
+        <MetaGrid items={fields} />
       </div>
 
-      <div style={s.section}>
-        <h2 style={s.h2}>Decision</h2>
-        <div style={s.grid}>
-          <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Summary</div><div style={s.val}>{decision.summary}</div></div>
-          <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Rationale</div><div style={s.val}>{decision.rationale}</div></div>
-          <div><div style={s.label}>ID</div><div style={{ ...s.val, wordBreak: 'break-all' }}><code>{decision.id}</code></div></div>
-          <div><div style={s.label}>Status</div><div style={s.val}><StatusBadge status={decision.status} /></div></div>
-          <div>
-            <div style={s.label}>Task</div>
-            <div style={s.val}><Link href={`/tasks/${decision.task_id}`} style={s.link}>{task ? task.title.slice(0, 30) : decision.task_id.slice(0, 8) + '…'}</Link></div>
-          </div>
-          <div><div style={s.label}>Decided By</div><div style={s.val}>{decision.decided_by_user_id ? <code>{decision.decided_by_user_id.slice(0, 8)}…</code> : <span style={s.empty}>—</span>}</div></div>
-          <div><div style={s.label}>Decided At</div><div style={s.val}>{fmt(decision.decided_at)}</div></div>
-          <div><div style={s.label}>Created</div><div style={s.val}>{fmt(decision.created_at)}</div></div>
-          <div><div style={s.label}>Updated</div><div style={s.val}>{fmt(decision.updated_at)}</div></div>
-        </div>
-      </div>
+      <RelatedList title="Parent Task" empty={!task} emptyLabel="Parent task not visible.">
+        {task && (
+          <DetailRow>
+            <Link href={`/tasks/${task.id}`} style={ds.link}>{shortId(task.id)}</Link>
+            <span style={ds.dim}>{safeText(task.title, 70)}</span>
+            <StatusBadge status={task.status} />
+          </DetailRow>
+        )}
+      </RelatedList>
 
-      <Section title="Parent Task">
-        {task
-          ? <Row><Link href={`/tasks/${task.id}`} style={s.link}>{task.id.slice(0, 8)}…</Link> <span style={s.dim}>{task.title.slice(0, 70)}</span> <StatusBadge status={task.status} /></Row>
-          : <Empty>Parent task not visible.</Empty>}
-      </Section>
-
-      <Section title={`Approvals (${approvals.length})`}>
-        {approvals.length === 0 ? <Empty>No approvals for this decision.</Empty> : approvals.map(a => (
-          <Row key={a.id}><Link href={`/approvals/${a.id}`} style={s.link}>{a.id.slice(0, 8)}…</Link> <code style={s.tag}>{a.category}</code> <span style={s.dim}>{(a.trigger_reason ?? '').slice(0, 60)}</span> <StatusBadge status={a.status} /></Row>
+      <RelatedList title={`Approvals (${approvals.length})`} empty={approvals.length === 0} emptyLabel="No approvals for this decision.">
+        {approvals.map(a => (
+          <DetailRow key={a.id}>
+            <Link href={`/approvals/${a.id}`} style={ds.link}>{shortId(a.id)}</Link>
+            <Tag>{a.category}</Tag>
+            <span style={ds.dim}>{safeText(a.trigger_reason, 60)}</span>
+            <StatusBadge status={a.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
 
-      <Section title={`Workflow Runs (${runs.length})`}>
-        {runs.length === 0 ? <Empty>No workflow runs reference this decision.</Empty> : runs.map(r => (
-          <Row key={r.id}><Link href={`/workflow-runs/${r.id}`} style={s.link}>{r.id.slice(0, 8)}…</Link> <code style={s.tag}>{r.workflow_id}</code> <StatusBadge status={r.status} /></Row>
+      <RelatedList title={`Workflow Runs (${runs.length})`} empty={runs.length === 0} emptyLabel="No workflow runs reference this decision.">
+        {runs.map(r => (
+          <DetailRow key={r.id}>
+            <Link href={`/workflow-runs/${r.id}`} style={ds.link}>{shortId(r.id)}</Link>
+            <Tag>{r.workflow_id}</Tag>
+            <StatusBadge status={r.status} />
+          </DetailRow>
         ))}
-      </Section>
+      </RelatedList>
     </div>
   )
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div style={s.section}><h2 style={s.h2}>{title}</h2><div style={s.list}>{children}</div></div>
-}
-function Row({ children }: { children: React.ReactNode }) { return <div style={s.rowItem}>{children}</div> }
-function Empty({ children }: { children: React.ReactNode }) { return <div style={s.empty}>{children}</div> }
-
-const s: Record<string, React.CSSProperties> = {
-  page:    { padding: '24px', fontFamily: 'monospace', maxWidth: 1000 },
-  header:  { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' },
-  h1:      { fontSize: 20, fontWeight: 700, margin: 0 },
-  back:    { fontSize: 13, color: '#6b7280', textDecoration: 'none' },
-  section: { marginBottom: 22 },
-  h2:      { fontSize: 14, fontWeight: 700, color: '#374151', margin: '0 0 10px' },
-  grid:    { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px 16px', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 6, padding: 16 },
-  label:   { fontSize: 11, color: '#6b7280', marginBottom: 2 },
-  val:     { fontSize: 13 },
-  link:    { color: '#2563eb', textDecoration: 'none' },
-  list:    { display: 'flex', flexDirection: 'column', gap: 4 },
-  rowItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderBottom: '1px solid #f3f4f6', fontSize: 12, flexWrap: 'wrap' },
-  dim:     { color: '#6b7280' },
-  tag:     { background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, fontSize: 11 },
-  empty:   { color: '#9ca3af', fontSize: 12, padding: '4px 0' },
 }
