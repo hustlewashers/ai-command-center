@@ -163,11 +163,16 @@ export default function RequestsPage() {
                     <td style={s.td}><StatusBadge status={r.status} /></td>
                     <td style={s.td}>
                       {r.workflow ? (
-                        <Link href={`/workflow-runs/${r.workflow.run_id}`} style={s.wfLink}>
-                          <span style={{ ...s.wfBadge, background: WF_COLOR[r.workflow.status] ?? '#6b7280' }}>
-                            {r.workflow.status}
-                          </span>
-                        </Link>
+                        <span style={s.wfCell}>
+                          <Link href={`/workflow-runs/${r.workflow.run_id}`} style={s.wfLink}>
+                            <span style={{ ...s.wfBadge, background: WF_COLOR[r.workflow.status] ?? '#6b7280' }}>
+                              {r.workflow.status}
+                            </span>
+                          </Link>
+                          {(r.workflow.status === 'failed' || r.workflow.status === 'cancelled') && (
+                            <Link href={`/requests/${r.id}#recovery`} style={s.recoverBtn}>Recover</Link>
+                          )}
+                        </span>
                       ) : (
                         <span style={s.wfNone}>none</span>
                       )}
@@ -214,9 +219,11 @@ const s: Record<string, React.CSSProperties> = {
   select:   { padding: '0.4rem', fontFamily: 'monospace', fontSize: '0.85rem', border: '1px solid #ccc' },
   note:     { color: '#15803d', fontSize: '0.8rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '0.4rem 0.6rem' },
   idLink:   { color: '#2563eb', textDecoration: 'none' },
+  wfCell:   { display: 'inline-flex', alignItems: 'center', gap: '0.35rem' },
   wfLink:   { textDecoration: 'none' },
   wfBadge:  { display: 'inline-block', padding: '1px 7px', borderRadius: 3, fontSize: '0.68rem', fontWeight: 'bold', color: '#fff', whiteSpace: 'nowrap' },
   wfNone:   { color: '#bbb', fontSize: '0.72rem' },
+  recoverBtn:{ display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: '0.66rem', fontWeight: 'bold', color: '#fff', background: '#d97706', textDecoration: 'none', whiteSpace: 'nowrap' },
   btn:      { padding: '0.4rem 1rem', fontFamily: 'monospace', cursor: 'pointer', alignSelf: 'flex-start' },
   hr:       { margin: '1.5rem 0', borderColor: '#ddd' },
   muted:    { color: '#666', fontSize: '0.875rem' },

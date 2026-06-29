@@ -1,4 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getRecoveryEligibility } from './recovery'
+import type { WorkflowRecoveryAction, WorkflowRecoveryEligibility } from '@/types/workflow-recovery'
+import type { WorkflowRunStatus } from '@/types/workflow-runs'
 
 // ─────────────────────────────────────────────────────────────
 // Sprint 5.9 — Request trigger status (read model)
@@ -23,10 +26,14 @@ export interface TriggerRunSummary {
   workflow_id: string
   status: string
   background_job_id: string | null
+  parent_run_id: string | null
+  current_step_id: string | null
+  current_step_index: number | null
+  retry_count: number
+  error_message: string | null
   started_at: string | null
   completed_at: string | null
   failed_at: string | null
-  current_step_id: string | null
   created_at: string
 }
 
@@ -46,10 +53,25 @@ export interface RequestTriggerStatus {
   has_active_workflow: boolean
   missing_inputs: string[]          // 'project_id' / 'department_id' the request lacks
   can_trigger: boolean              // no active workflow → an operator may (re)start
+  // Recovery (Sprint 5.11) — computed from the latest run via the recovery
+  // engine's eligibility rules (single source of truth; not duplicated here).
+  eligibility: WorkflowRecoveryEligibility | null
+  recovery_available: boolean
+  recommended_action: WorkflowRecoveryAction | null
 }
 
 const RUN_COLS =
-  'id, workflow_id, status, background_job_id, started_at, completed_at, failed_at, current_step_id, created_at'
+  'id, workflow_id, status, background_job_id, parent_run_id, current_step_id, current_step_index, retry_count, error_message, started_at, completed_at, failed_at, created_at'
+
+// Safest-first recommendation among the actions the engine deems eligible.
+// resume avoids duplicate side effects; cancel only when nothing else applies.
+function recommendAction(e: WorkflowRecoveryEligibility): WorkflowRecoveryAction | null {
+  if (e.can_resume)  return 'resume'
+  if (e.can_retry)   return 'retry'
+  if (e.can_restart) return 'restart'
+  if (e.can_cancel)  return 'cancel'
+  return null
+}
 
 type RequestShape = {
   id: string
@@ -93,6 +115,14 @@ export async function getRequestTriggerStatus(
 
   const hasActiveWorkflow = activeRun !== null || latestJob !== null
 
+  // Recovery eligibility for the latest run, via the recovery engine's rules.
+  const eligibility = latestRun
+    ? getRecoveryEligibility({ status: latestRun.status as WorkflowRunStatus, current_step_index: latestRun.current_step_index })
+    : null
+  const recoveryAvailable = eligibility
+    ? eligibility.can_retry || eligibility.can_resume || eligibility.can_restart || eligibility.can_cancel
+    : false
+
   return {
     workflow_id:         REQUEST_WORKFLOW_ID,
     recent_runs:         recentRuns,
@@ -103,5 +133,8 @@ export async function getRequestTriggerStatus(
     has_active_workflow: hasActiveWorkflow,
     missing_inputs:      missingInputs,
     can_trigger:         !hasActiveWorkflow,
+    eligibility,
+    recovery_available:  recoveryAvailable,
+    recommended_action:  eligibility ? recommendAction(eligibility) : null,
   }
 }

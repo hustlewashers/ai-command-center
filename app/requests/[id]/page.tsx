@@ -2,10 +2,10 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getRecoveryEligibility } from '@/lib/workflows/recovery'
 import { getRequestTriggerStatus } from '@/lib/workflows/trigger-status'
 import RequestWorkflowActions from './RequestWorkflowActions'
-import type { WorkflowRunRow, WorkflowStepRunRow, WorkflowRunStatus } from '@/types/workflow-runs'
+import RequestWorkflowRecovery from './RequestWorkflowRecovery'
+import type { WorkflowRunRow, WorkflowRunStatus } from '@/types/workflow-runs'
 import type { RequestRow } from '@/types/requests'
 
 const TRIGGER_ROLES = new Set(['org_admin', 'department_lead'])
@@ -21,13 +21,29 @@ const REQUEST_COLS =
 const RUN_COLS = [
   'id', 'organization_id', 'workflow_id', 'workflow_version',
   'background_job_id', 'parent_run_id', 'status',
-  'trigger_type', 'trigger_entity_type', 'trigger_entity_id',
+  'trigger_type', 'trigger_entity_type', 'trigger_entity_id', 'accumulated',
   'started_at', 'completed_at', 'failed_at',
   'current_step_id', 'current_step_index', 'retry_count', 'error_message',
   'created_at', 'updated_at',
 ].join(', ')
 
-const STEP_COLS = 'id, step_id, step_index, step_type, status, duration_ms, error_message, completed_at, created_at'
+// Best-effort recovery action label from persisted run fields (not stored
+// per-run): no parent = initial; parent + retry_count 0 = restart (resets);
+// parent + retry_count > 0 = retry/resume (both increment). Coarse but honest.
+function deriveAction(parentRunId: string | null, retryCount: number): string {
+  if (!parentRunId) return 'initial'
+  return retryCount === 0 ? 'restart' : 'retry/resume'
+}
+
+// Duration between start and the run's end (completed or failed).
+function durationStr(startedAt: string | null, endedAt: string | null): string {
+  if (!startedAt || !endedAt) return '—'
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime()
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  return `${(ms / 60000).toFixed(1)}m`
+}
+
 const JOB_COLS  = 'id, job_type, status, retry_count, max_retries, last_error, created_at'
 const LOG_COLS  = 'id, event_type, actor, summary, status, occurred_at'
 
@@ -82,21 +98,15 @@ export default async function RequestDetailPage({
   const run = (runRes.data ?? null) as unknown as WorkflowRunRow | null
   const latestLog = (logRes.data ?? null) as unknown as LogRow | null
 
-  // Phase 2: latest step + background job (depends on run)
-  let latestStep: WorkflowStepRunRow | null = null
+  // Phase 2: background job (depends on run)
   let job: JobRow | null = null
 
   if (run) {
-    const [stepRes, jobRes] = await Promise.all([
-      supabase.from('workflow_step_runs').select(STEP_COLS)
-        .eq('workflow_run_id', run.id)
-        .order('step_index', { ascending: false }).limit(1).maybeSingle(),
-      run.background_job_id
-        ? supabase.from('background_jobs').select(JOB_COLS).eq('id', run.background_job_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ])
-    latestStep = (stepRes.data ?? null) as unknown as WorkflowStepRunRow | null
-    job = (jobRes.data ?? null) as unknown as JobRow | null
+    if (run.background_job_id) {
+      const jobRes = await supabase.from('background_jobs').select(JOB_COLS)
+        .eq('id', run.background_job_id).maybeSingle()
+      job = (jobRes.data ?? null) as unknown as JobRow | null
+    }
   } else {
     // No run yet — surface a queued/processing job if one is waiting.
     const jobRes = await supabase.from('background_jobs').select(JOB_COLS)
@@ -112,16 +122,26 @@ export default async function RequestDetailPage({
   })
   const roleAllowed = TRIGGER_ROLES.has(context.role)
 
-  const eligibility = run ? getRecoveryEligibility(run) : null
-  const recoveryActions = eligibility
-    ? Object.entries(eligibility).filter(([, v]) => v).map(([k]) => k.replace('can_', ''))
-    : []
-
-  // ── workflow status summary ──
+  // ── workflow status summary (Sprint 5.11) ──
   let workflowStatus: { label: string; color: string }
   if (run) workflowStatus = { label: run.status, color: RUN_STATUS_COLOR[run.status] ?? '#6b7280' }
   else if (job) workflowStatus = { label: `job ${job.status}`, color: '#6b7280' }
   else workflowStatus = { label: 'none', color: '#9ca3af' }
+
+  const runEndedAt = run ? (run.completed_at ?? run.failed_at) : null
+  const runDuration = run ? durationStr(run.started_at, runEndedAt) : '—'
+
+  // Safe deep-links only: task/work-packet detail routes don't exist, so link to
+  // the list pages and only when an id is actually present (never a broken link).
+  const acc = (run?.accumulated ?? {}) as Record<string, unknown>
+  const taskId = typeof acc.task_id === 'string' ? acc.task_id : null
+  const wpId   = typeof acc.work_packet_id === 'string' ? acc.work_packet_id : null
+
+  // Concise outcome line for the latest run.
+  let outcomeLine: { text: string; color: string } | null = null
+  if (run?.status === 'failed') outcomeLine = { text: `Failed at ${run.current_step_id ?? 'unknown step'}: ${run.error_message ?? 'unknown error'}`, color: '#dc2626' }
+  else if (run?.status === 'cancelled') outcomeLine = { text: 'Run was cancelled.', color: '#9ca3af' }
+  else if (run?.status === 'completed') outcomeLine = { text: 'Workflow completed successfully.', color: '#16a34a' }
 
   const s = {
     page:    { padding: '24px', fontFamily: 'monospace', maxWidth: 1000 } as React.CSSProperties,
@@ -164,63 +184,56 @@ export default async function RequestDetailPage({
         </div>
       </div>
 
-      {/* Workflow status */}
+      {/* Latest Workflow summary (Sprint 5.11) */}
       <div style={s.section}>
-        <h2 style={s.h2}>Workflow</h2>
-        <div style={s.grid}>
-          <div>
-            <div style={s.label}>Workflow Status</div>
-            <div style={s.val}><span style={s.badge(workflowStatus.color)}>{workflowStatus.label}</span></div>
+        <h2 style={s.h2}>Latest Workflow</h2>
+        {!run ? (
+          <div style={s.empty}>
+            {job ? `A workflow job is ${job.status}; no run row yet.` : 'No workflow has run for this request yet.'}
           </div>
-          <div>
-            <div style={s.label}>Workflow Run</div>
-            <div style={s.val}>
-              {run
-                ? <Link href={`/workflow-runs/${run.id}`} style={s.link}>{run.id.slice(0, 8)}… ({run.workflow_id})</Link>
-                : <span style={s.empty}>not started</span>}
+        ) : (
+          <>
+            {outcomeLine && (
+              <p style={{ ...s.val, color: outcomeLine.color, margin: '0 0 12px', wordBreak: 'break-word' }}>
+                {outcomeLine.text}
+              </p>
+            )}
+            <div style={s.grid}>
+              <div><div style={s.label}>Status</div><div style={s.val}><span style={s.badge(workflowStatus.color)}>{run.status}</span></div></div>
+              <div><div style={s.label}>Workflow Run</div><div style={s.val}><Link href={`/workflow-runs/${run.id}`} style={s.link}>{run.id.slice(0, 8)}… ({run.workflow_id})</Link></div></div>
+              <div><div style={s.label}>Background Job</div><div style={s.val}>{job ? <Link href="/background-jobs" style={s.link}>{job.id.slice(0, 8)}… ({job.status})</Link> : <span style={s.empty}>—</span>}</div></div>
+              <div><div style={s.label}>Current Step</div><div style={s.val}>{run.current_step_id ?? '—'}{run.current_step_index !== null ? ` (#${run.current_step_index})` : ''}</div></div>
+              <div><div style={s.label}>Retry Count</div><div style={s.val}>{run.retry_count}</div></div>
+              <div><div style={s.label}>Started</div><div style={s.val}>{fmt(run.started_at)}</div></div>
+              <div><div style={s.label}>Completed</div><div style={s.val}>{fmt(runEndedAt)}</div></div>
+              <div><div style={s.label}>Duration</div><div style={s.val}>{runDuration}</div></div>
+              <div><div style={s.label}>Recovery Available</div><div style={s.val}>{triggerStatus.recovery_available ? `yes${triggerStatus.recommended_action ? ` (${triggerStatus.recommended_action})` : ''}` : 'no'}</div></div>
+              <div><div style={s.label}>Task</div><div style={s.val}>{taskId ? <Link href="/tasks" style={s.link}>{taskId.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
+              <div><div style={s.label}>Work Packet</div><div style={s.val}>{wpId ? <Link href="/work-packets" style={s.link}>{wpId.slice(0, 8)}…</Link> : <span style={s.empty}>—</span>}</div></div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={s.label}>Latest Execution</div>
+                <div style={s.val}>{latestLog ? <><code>{latestLog.event_type}</code> — {latestLog.summary ?? '—'} <span style={{ color: '#9ca3af' }}>({fmt(latestLog.occurred_at)})</span></> : <span style={s.empty}>—</span>}</div>
+              </div>
+              {run.status === 'failed' && run.error_message && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={s.label}>Latest Error</div>
+                  <div style={{ ...s.val, color: '#dc2626', wordBreak: 'break-word' }}>{run.error_message}</div>
+                </div>
+              )}
             </div>
-          </div>
-          <div>
-            <div style={s.label}>Background Job</div>
-            <div style={s.val}>
-              {job
-                ? <Link href="/background-jobs" style={s.link}>{job.id.slice(0, 8)}… ({job.status})</Link>
-                : <span style={s.empty}>—</span>}
-            </div>
-          </div>
-          <div>
-            <div style={s.label}>Latest Step</div>
-            <div style={s.val}>
-              {latestStep
-                ? <>#{latestStep.step_index} {latestStep.step_id} <span style={{ color: '#6b7280' }}>({latestStep.status})</span></>
-                : <span style={s.empty}>—</span>}
-            </div>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <div style={s.label}>Latest Execution</div>
-            <div style={s.val}>
-              {latestLog
-                ? <><code>{latestLog.event_type}</code> — {latestLog.summary ?? '—'} <span style={{ color: '#9ca3af' }}>({fmt(latestLog.occurred_at)})</span></>
-                : <span style={s.empty}>no execution logs yet</span>}
-            </div>
-          </div>
-          <div>
-            <div style={s.label}>Recovery State</div>
-            <div style={s.val}>
-              {run
-                ? (recoveryActions.length > 0
-                    ? <Link href={`/workflow-runs/${run.id}`} style={s.link}>{recoveryActions.join(', ')}</Link>
-                    : <span style={s.empty}>none available</span>)
-                : <span style={s.empty}>—</span>}
-            </div>
-          </div>
-          {run?.error_message && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <div style={s.label}>Error</div>
-              <div style={{ ...s.val, color: '#dc2626', wordBreak: 'break-word' }}>{run.error_message}</div>
-            </div>
-          )}
-        </div>
+          </>
+        )}
+      </div>
+
+      {/* Workflow Recovery (Sprint 5.11) — reuses the existing recovery API */}
+      <div id="recovery" style={s.section}>
+        <h2 style={s.h2}>Workflow Recovery</h2>
+        <RequestWorkflowRecovery
+          runId={run?.id ?? null}
+          eligibility={triggerStatus.eligibility}
+          canRecover={roleAllowed}
+          recommendedAction={triggerStatus.recommended_action}
+        />
       </div>
 
       {/* Workflow Actions (Sprint 5.9 / polished 5.10) */}
@@ -250,9 +263,9 @@ export default async function RequestDetailPage({
         </div>
       </div>
 
-      {/* Trigger History (Sprint 5.9) */}
+      {/* Recovery History (Sprint 5.11) — workflow_runs lineage, newest first */}
       <div style={s.section}>
-        <h2 style={s.h2}>Trigger History ({triggerStatus.recent_runs.length})</h2>
+        <h2 style={s.h2}>Recovery History ({triggerStatus.recent_runs.length})</h2>
         {triggerStatus.recent_runs.length === 0 ? (
           <div style={s.empty}>No workflow runs for this request yet.</div>
         ) : (
@@ -260,24 +273,30 @@ export default async function RequestDetailPage({
             <thead>
               <tr>
                 <th style={s.th}>Run</th>
-                <th style={s.th}>Workflow</th>
+                <th style={s.th}>Parent</th>
+                <th style={s.th}>Action</th>
+                <th style={s.th}>Retries</th>
                 <th style={s.th}>Status</th>
                 <th style={s.th}>Started</th>
-                <th style={s.th}>Completed</th>
-                <th style={s.th}>Current Step</th>
+                <th style={s.th}>Ended</th>
               </tr>
             </thead>
             <tbody>
               {triggerStatus.recent_runs.map(r => (
                 <tr key={r.id}>
                   <td style={s.td}><Link href={`/workflow-runs/${r.id}`} style={s.link}>{r.id.slice(0, 8)}…</Link></td>
-                  <td style={s.td}><code>{r.workflow_id}</code></td>
+                  <td style={s.td}>
+                    {r.parent_run_id
+                      ? <Link href={`/workflow-runs/${r.parent_run_id}`} style={s.link}>{r.parent_run_id.slice(0, 8)}…</Link>
+                      : <span style={s.empty}>—</span>}
+                  </td>
+                  <td style={s.td}><code>{deriveAction(r.parent_run_id, r.retry_count)}</code></td>
+                  <td style={s.td}>{r.retry_count}</td>
                   <td style={s.td}>
                     <span style={s.badge(RUN_STATUS_COLOR[r.status as WorkflowRunStatus] ?? '#6b7280')}>{r.status}</span>
                   </td>
                   <td style={s.td}>{fmtShort(r.started_at)}</td>
                   <td style={s.td}>{fmtShort(r.completed_at ?? r.failed_at)}</td>
-                  <td style={s.td}>{r.current_step_id ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

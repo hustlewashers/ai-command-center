@@ -173,6 +173,7 @@ export default async function DashboardPage({
     wfParentIdsResult,
     activeReqsResult,
     reqRunIdsResult,
+    wfCancelledResult,
   ] = await Promise.all([
     supabase.from('requests')
       .select('id, intent, status, submitted_at', { count: 'exact' })
@@ -256,6 +257,9 @@ export default async function DashboardPage({
     supabase.from('workflow_runs').select('trigger_entity_id, status, created_at')
       .eq('trigger_entity_type', 'request')
       .order('created_at', { ascending: false }).limit(2000),
+
+    // Recoverable workflows (Sprint 5.11): cancelled count (failed already above).
+    supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
   ])
 
   // Extract with safe fallbacks
@@ -302,12 +306,14 @@ export default async function DashboardPage({
     return st === undefined || st === 'failed' || st === 'cancelled'
   }).length
 
+  const wfRecoverable = wfHealth.failed + (wfCancelledResult.count ?? 0)
   const workflowHealthCards = [
     { label: 'Pending',        value: wfHealth.pending,        href: '/workflow-runs?status=pending',   color: '#6b7280' },
     { label: 'Running',        value: wfHealth.running,        href: '/workflow-runs?status=running',   color: '#2563eb' },
     { label: 'Failed',         value: wfHealth.failed,         href: '/workflow-runs?status=failed',    color: '#dc2626' },
     { label: 'Completed',      value: wfHealth.completed,      href: '/workflow-runs?status=completed', color: '#16a34a' },
     { label: 'Recovery Needed', value: wfHealth.recoveryNeeded, href: '/workflow-runs?status=failed',    color: '#d97706' },
+    { label: 'Recoverable',     value: wfRecoverable,           href: '/workflow-runs?status=failed',    color: '#b45309' },
   ]
 
   // Build alerts list (deduped: one entry per approval count, individual rows for others)
@@ -439,7 +445,7 @@ export default async function DashboardPage({
 
       {/* Workflow Health (Sprint 5.8) */}
       <h2 style={s.sectionTitle}>Workflow Health</h2>
-      <div style={{ ...s.kpiRow, gridTemplateColumns: 'repeat(5, 1fr)' }}>
+      <div style={{ ...s.kpiRow, gridTemplateColumns: 'repeat(6, 1fr)' }}>
         {workflowHealthCards.map(c => (
           <KpiCard
             key={c.label}
