@@ -28,7 +28,10 @@ export async function GET() {
     const requests = (data ?? []) as { id: string }[]
 
     // Batch: latest run per request (newest first → first seen per id wins).
+    // From the same fetch we also derive the latest request_ai_summary run per
+    // request (Sprint 6.4) — no extra query.
     let workflowByRequest: Record<string, { run_id: string; workflow_id: string; status: string }> = {}
+    let aiByRequest: Record<string, { run_id: string; status: string }> = {}
     if (requests.length > 0) {
       const { data: runs } = await supabase
         .from('workflow_runs')
@@ -38,16 +41,28 @@ export async function GET() {
         .order('created_at', { ascending: false })
 
       const seen = new Set<string>()
+      const seenAi = new Set<string>()
       const map: typeof workflowByRequest = {}
+      const aiMap: typeof aiByRequest = {}
       for (const run of (runs ?? []) as { id: string; workflow_id: string; status: string; trigger_entity_id: string }[]) {
-        if (seen.has(run.trigger_entity_id)) continue
-        seen.add(run.trigger_entity_id)
-        map[run.trigger_entity_id] = { run_id: run.id, workflow_id: run.workflow_id, status: run.status }
+        if (!seen.has(run.trigger_entity_id)) {
+          seen.add(run.trigger_entity_id)
+          map[run.trigger_entity_id] = { run_id: run.id, workflow_id: run.workflow_id, status: run.status }
+        }
+        if (run.workflow_id === 'request_ai_summary' && !seenAi.has(run.trigger_entity_id)) {
+          seenAi.add(run.trigger_entity_id)
+          aiMap[run.trigger_entity_id] = { run_id: run.id, status: run.status }
+        }
       }
       workflowByRequest = map
+      aiByRequest = aiMap
     }
 
-    const annotated = requests.map(r => ({ ...r, workflow: workflowByRequest[r.id] ?? null }))
+    const annotated = requests.map(r => ({
+      ...r,
+      workflow: workflowByRequest[r.id] ?? null,
+      ai_summary: aiByRequest[r.id] ?? null,
+    }))
     return ok(annotated)
   } catch (err) {
     return errorResponse(err)

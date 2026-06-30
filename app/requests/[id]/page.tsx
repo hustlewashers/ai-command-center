@@ -8,6 +8,7 @@ import type { MetaItem } from '@/components/detail'
 import { formatDate, formatDuration, shortId } from '@/lib/ui/format'
 import RequestWorkflowActions from './RequestWorkflowActions'
 import RequestWorkflowRecovery from './RequestWorkflowRecovery'
+import RequestAiSummaryActions from './RequestAiSummaryActions'
 import type { WorkflowRunRow, WorkflowRunStatus } from '@/types/workflow-runs'
 import type { RequestRow } from '@/types/requests'
 
@@ -108,6 +109,26 @@ export default async function RequestDetailPage({
     id: req.id, project_id: req.project_id, routed_department_id: req.routed_department_id,
   })
   const roleAllowed = TRIGGER_ROLES.has(context.role)
+
+  // ── AI Summary (Sprint 6.4) — latest request_ai_summary run for this request ──
+  const { data: aiRunData } = await supabase.from('workflow_runs')
+    .select('id, status, accumulated, started_at, completed_at, failed_at, current_step_id, error_message')
+    .eq('trigger_entity_type', 'request').eq('trigger_entity_id', id)
+    .eq('workflow_id', 'request_ai_summary')
+    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  const aiRun = (aiRunData ?? null) as {
+    id: string; status: string; accumulated: Record<string, unknown> | null
+    started_at: string | null; completed_at: string | null; failed_at: string | null
+    current_step_id: string | null; error_message: string | null
+  } | null
+  const aiAcc = (aiRun?.accumulated ?? {}) as Record<string, unknown>
+  const aiResult = (aiAcc.ai_result ?? null) as Record<string, unknown> | null
+  const aiOutputId = typeof aiAcc.output_id === 'string' ? aiAcc.output_id : null
+  const aiApprovalId = typeof aiAcc.approval_id === 'string' ? aiAcc.approval_id : null
+  const aiActive = aiRun !== null && ['pending', 'running', 'resuming'].includes(aiRun.status)
+  // Who may start an AI summary: admins/leads, or a department_member who owns the request.
+  const aiActionAllowed = roleAllowed ||
+    (context.role === 'department_member' && req.submitted_by_user_id === context.userId)
 
   // ── workflow status summary (Sprint 5.11) ──
   let workflowStatus: { label: string; color: string }
@@ -226,6 +247,44 @@ export default async function RequestDetailPage({
             defaultDepartmentId={req.routed_department_id ?? ''}
           />
         </div>
+      </div>
+
+      {/* AI Summary (Sprint 6.4) */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Summary</h2>
+        {!aiRun ? (
+          <p style={{ ...ds.empty, marginBottom: 12 }}>No AI summary has run for this request yet.</p>
+        ) : (
+          <div style={{ ...ds.grid, marginBottom: 12 }}>
+            <div><div style={ds.label}>Status</div><div style={ds.val}>
+              <span style={badge(RUN_STATUS_COLOR[aiRun.status as WorkflowRunStatus] ?? '#6b7280')}>{aiRun.status}</span>
+            </div></div>
+            <div><div style={ds.label}>AI Run</div><div style={ds.val}>
+              <Link href={`/workflow-runs/${aiRun.id}`} style={ds.link}>{shortId(aiRun.id)}</Link>
+            </div></div>
+            <div><div style={ds.label}>Draft Output</div><div style={ds.val}>
+              {aiOutputId ? <Link href={`/outputs/${aiOutputId}`} style={ds.link}>{shortId(aiOutputId)}</Link> : <span style={ds.empty}>—</span>}
+            </div></div>
+            <div><div style={ds.label}>Pending Approval</div><div style={ds.val}>
+              {aiApprovalId ? <Link href={`/approvals/${aiApprovalId}`} style={ds.link}>{shortId(aiApprovalId)}</Link> : <span style={ds.empty}>—</span>}
+            </div></div>
+            <div><div style={ds.label}>Started</div><div style={ds.val}>{formatDate(aiRun.started_at)}</div></div>
+            <div><div style={ds.label}>Ended</div><div style={ds.val}>{formatDate(aiRun.completed_at ?? aiRun.failed_at)}</div></div>
+            {typeof aiResult?.summary === 'string' && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={ds.label}>AI Result Summary</div>
+                <div style={{ ...ds.val, wordBreak: 'break-word' }}>{(aiResult.summary as string).slice(0, 600)}</div>
+              </div>
+            )}
+            {aiRun.status === 'failed' && aiRun.error_message && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <div style={ds.label}>Error</div>
+                <div style={{ ...ds.val, color: '#dc2626', wordBreak: 'break-word' }}>{aiRun.error_message}</div>
+              </div>
+            )}
+          </div>
+        )}
+        <RequestAiSummaryActions requestId={req.id} allowed={aiActionAllowed} hasActiveAiSummary={aiActive} />
       </div>
 
       {/* Recovery History (Sprint 5.11) — workflow_runs lineage, newest first.

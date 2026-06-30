@@ -323,6 +323,15 @@ export default async function DashboardPage({
   // AI Operations summary (Sprint 6.2) — lightweight single read.
   const aiSummary = await getAiMetricSummary(supabase)
 
+  // AI review signal (Sprint 6.4): AI drafts awaiting approval + failed AI runs.
+  const [aiPendingApprovalsRes, aiFailedRunsRes] = await Promise.all([
+    supabase.from('approvals').select('*', { count: 'exact', head: true })
+      .eq('subject_type', 'output').eq('status', 'pending'),
+    supabase.from('workflow_runs').select('*', { count: 'exact', head: true })
+      .eq('workflow_id', 'request_ai_summary').eq('status', 'failed'),
+  ])
+  const aiNeedsReview = (aiPendingApprovalsRes.count ?? 0) + (aiFailedRunsRes.count ?? 0)
+
   const wfRecoverable = wfHealth.failed + (wfCancelledResult.count ?? 0)
   const workflowHealthCards = [
     { label: 'Pending',        value: wfHealth.pending,        href: '/workflow-runs?status=pending',   color: '#6b7280' },
@@ -358,6 +367,14 @@ export default async function DashboardPage({
       kind: 'missing',
       text: `${missingTriggerCount} request${missingTriggerCount !== 1 ? 's' : ''} needing workflow review (no run, or latest failed/cancelled)`,
       href: '/requests',
+    })
+  }
+  if (aiNeedsReview > 0) {
+    alerts.push({
+      key: 'ai-needs-review',
+      kind: 'missing',
+      text: `${aiNeedsReview} AI summar${aiNeedsReview !== 1 ? 'ies' : 'y'} needing review (draft awaiting approval, or failed)`,
+      href: '/ai-operations',
     })
   }
 

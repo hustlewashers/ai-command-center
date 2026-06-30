@@ -270,6 +270,130 @@ export async function triggerRequestWorkflow(
   return result
 }
 
+// ── AI summary trigger (Sprint 6.4) ──────────────────────────
+// Manually starts the existing request_ai_summary workflow for a request.
+// Orchestration only: validates, de-duplicates, enqueues — the worker executes
+// the governed call_ai step (draft output + pending approval; never delivers).
+export async function triggerRequestAiSummary(
+  requestId: string,
+  ctx: UserContext,
+): Promise<WorkflowTriggerResult> {
+  if (ctx.role === 'read_only') {
+    throw createError('forbidden', 'read_only role cannot trigger AI summaries')
+  }
+
+  const svc = getServiceClient()
+  const workflowId = 'request_ai_summary'
+
+  const workflow = getWorkflow(workflowId)
+  if (!workflow) return notTriggered(`No workflow '${workflowId}' registered`)
+
+  const { data: req, error: reqErr } = await svc
+    .from('requests')
+    .select('id, organization_id, routed_department_id, project_id, intent, submitted_by_user_id, deleted_at')
+    .eq('id', requestId)
+    .eq('organization_id', ctx.organizationId)
+    .maybeSingle()
+
+  if (reqErr) throw createError('internal', `ai summary: request fetch failed: ${reqErr.message}`)
+  if (!req || (req as { deleted_at: string | null }).deleted_at) {
+    throw createError('not_found', 'Request not found')
+  }
+  const r = req as {
+    id: string; organization_id: string
+    routed_department_id: string | null; project_id: string | null
+    intent: string; submitted_by_user_id: string | null
+  }
+
+  // request_ai_summary → create_output requires a department and project.
+  const departmentId = r.routed_department_id ?? ctx.departmentId
+  const projectId    = r.project_id
+  if (!departmentId) {
+    const result = notTriggered('Request has no department; request_ai_summary not triggered')
+    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result)
+    return result
+  }
+  if (!projectId) {
+    const result = notTriggered('Request has no project; request_ai_summary not triggered')
+    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result)
+    return result
+  }
+
+  // Duplicate protection — one active AI summary per request.
+  const existing = await findActiveWorkflow(svc, r.organization_id, 'request', r.id, workflowId)
+  if (existing) {
+    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, existing)
+    return existing
+  }
+
+  // Best-effort: a task linked to this request lets create_output attach the
+  // draft (outputs.task_id is NOT NULL). Without one the run fails at
+  // create_output and is recoverable via the existing recovery engine.
+  const { data: task } = await svc.from('tasks').select('id')
+    .eq('request_id', r.id).is('deleted_at', null)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  const taskId = (task as { id: string } | null)?.id ?? null
+
+  const inputs = {
+    organization_id:     r.organization_id,
+    department_id:       departmentId,
+    project_id:          projectId,
+    created_by:          r.submitted_by_user_id ?? ctx.userId,
+    task_id:             taskId,
+    title:               r.intent,
+    intent:              r.intent,
+    request_id:          r.id,
+    trigger_type:        'manual_ai_summary',
+    trigger_entity_type: 'request',
+    trigger_entity_id:   r.id,
+  }
+
+  const jobId = await enqueue({
+    job_type:           'workflow_step',
+    organization_id:    r.organization_id,
+    payload:            { workflow_id: workflowId, inputs },
+    related_request_id: r.id,
+    created_by_user_id: ctx.userId,
+  })
+
+  const result: WorkflowTriggerResult = {
+    triggered: true, deduped: false, workflow_id: workflowId,
+    background_job_id: jobId, workflow_run_id: null,
+    reason: taskId ? 'AI summary workflow enqueued' : 'AI summary enqueued (no linked task — draft creation may need recovery)',
+  }
+  await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result)
+  return result
+}
+
+// Request-scoped audit for the manual AI summary trigger (TASK 7).
+async function logAiSummaryTrigger(
+  svc: SupabaseClient, ctx: UserContext, organizationId: string,
+  requestId: string, result: WorkflowTriggerResult,
+): Promise<void> {
+  const outcome = triggerOutcome(result)
+  const { error } = await svc.from('execution_logs').insert({
+    organization_id: organizationId,
+    event_type:      'state_change',
+    actor:           'workflow-trigger',
+    summary:         `AI summary trigger ${outcome} for request ${requestId}: ${result.reason}`,
+    context_type:    'request',
+    context_id:      requestId,
+    metadata: {
+      trigger_type:    'manual_ai_summary',
+      workflow_id:     'request_ai_summary',
+      request_id:      requestId,
+      triggered:       result.triggered,
+      deduped:         result.deduped,
+      reason:          result.reason,
+      actor_user_id:   ctx.userId,
+      background_job_id: result.background_job_id,
+      workflow_run_id: result.workflow_run_id,
+    },
+    status: 'recorded',
+  })
+  if (error) console.warn('[ai-summary-trigger] audit log failed:', error.message)
+}
+
 // ── Task trigger (forward-looking) ───────────────────────────
 // No task-triggered workflow is registered yet (Sprint 5.8). Validates and
 // returns a not-triggered result until such a definition is declared.

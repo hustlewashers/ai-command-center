@@ -20,6 +20,24 @@ type CreatedRequest = RequestRow & {
   workflow?: { triggered: boolean; deduped: boolean; reason: string } | null
 }
 
+// Small lightweight AI summary signal for the request list (Sprint 6.4).
+function aiSignal(ai: { run_id: string; status: string } | null): React.ReactNode {
+  if (!ai) return <span style={{ color: '#bbb', fontSize: '0.72rem' }}>none</span>
+  let label = ai.status
+  let color = '#6b7280'
+  if (['pending', 'running', 'resuming'].includes(ai.status)) { label = 'running'; color = '#2563eb' }
+  else if (ai.status === 'completed') { label = 'draft'; color = '#16a34a' }
+  else if (ai.status === 'failed') { label = 'failed'; color = '#dc2626' }
+  else if (ai.status === 'cancelled') { label = 'cancelled'; color = '#9ca3af' }
+  return (
+    <Link href={`/workflow-runs/${ai.run_id}`} style={{ textDecoration: 'none' }}>
+      <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: '0.66rem', fontWeight: 'bold', color: '#fff', background: color, whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+    </Link>
+  )
+}
+
 export default function RequestsPage() {
   const router = useRouter()
   const [requests, setRequests] = useState<RequestRowWithWorkflow[]>([])
@@ -143,7 +161,7 @@ export default function RequestsPage() {
           <table style={s.table}>
             <thead>
               <tr>
-                {['id', 'intent', 'source', 'status', 'workflow', 'routed_dept', 'project', 'submitted_at', 'update'].map(col => (
+                {['id', 'intent', 'source', 'status', 'workflow', 'ai', 'routed_dept', 'project', 'submitted_at', 'update'].map(col => (
                   <th key={col} style={s.th}>{col}</th>
                 ))}
               </tr>
@@ -177,6 +195,7 @@ export default function RequestsPage() {
                         <span style={s.wfNone}>none</span>
                       )}
                     </td>
+                    <td style={s.td}>{aiSignal(r.ai_summary)}</td>
                     <td style={s.td}><code>{r.routed_department_id ? r.routed_department_id.slice(0, 8) + '…' : '—'}</code></td>
                     <td style={s.td}><code>{r.project_id ? r.project_id.slice(0, 8) + '…' : '—'}</code></td>
                     <td style={s.td}>{new Date(r.submitted_at).toLocaleString()}</td>

@@ -30,8 +30,15 @@ export interface RequestWorkflowState {
   status: string
 }
 
+// Latest request_ai_summary run state (Sprint 6.4).
+export interface RequestAiSummaryState {
+  run_id: string
+  status: string
+}
+
 export interface RequestRowWithWorkflow extends RequestRow {
   workflow: RequestWorkflowState | null
+  ai_summary: RequestAiSummaryState | null
 }
 
 export interface CreateRequestBody {
