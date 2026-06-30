@@ -23,9 +23,11 @@ export async function executeCallAi(
   promptId: AiPromptId,
   variables: Record<string, unknown>,
   ctx: WorkflowExecutionContext,
+  stepId?: string,
 ): Promise<AiExecutionOutput> {
   const svc = getServiceClient()
   const contextId = logContextId(ctx)
+  const workflowRunId = (ctx.workflow_run_id as string | undefined) ?? null
 
   const prompt = getPrompt(promptId)
   if (!prompt) throw createError('validation', `Unknown AI prompt id: '${promptId}'`)
@@ -45,7 +47,7 @@ export async function executeCallAi(
     summary:         `AI step started: ${promptId} (${route.model})`,
     context_type:    'workflow',
     context_id:      contextId,
-    metadata:        { phase: 'started', prompt_id: promptId, prompt_version: prompt.version, model: route.model },
+    metadata:        { phase: 'started', prompt_id: promptId, prompt_version: prompt.version, model: route.model, workflow_run_id: workflowRunId, step_id: stepId ?? null },
     status:          'recorded',
   })
 
@@ -86,17 +88,19 @@ export async function executeCallAi(
     context_id:      contextId,
     metadata: {
       phase: 'completed', prompt_id: promptId, model: route.model,
+      workflow_run_id: workflowRunId, step_id: stepId ?? null,
       prompt_tokens: provider.usage.prompt_tokens,
       completion_tokens: provider.usage.completion_tokens,
       total_tokens: provider.usage.total_tokens,
       latency_ms: provider.latency_ms,
       estimated_cost, confidence, mocked: provider.mocked,
+      provider_mode: provider.mocked ? 'mock' : 'live',
     },
     status: 'recorded',
   })
 
-  // ── agent_activity (best-effort; never fails the step — TASK 6) ──
-  await recordAgentActivity(svc, ctx, promptId, route.model, provider, estimated_cost)
+  // ── agent_activity (best-effort; never fails the step — TASK 4) ──
+  await recordAgentActivity(svc, ctx, promptId, route.model, provider, estimated_cost, workflowRunId, stepId ?? null)
 
   // ── runtime_metrics (non-fatal) ──
   await recordAiMetrics(svc, ctx, provider, estimated_cost)
@@ -132,28 +136,51 @@ async function logFailure(
   if (error) console.warn('[call_ai] failure log write failed:', error.message)
 }
 
-// agent_activity requires NOT-NULL agent_user_id + session_id. There is no
-// agent-session table seeded yet, so this is best-effort: resolve an agent user
-// if one exists, use/synthesize a session id, and never let a failure here
-// break the workflow (TASK 6).
+// Resolve the AI agent identity (Sprint 6.3, TASK 1). Precedence:
+//   1. AI_AGENT_USER_ID env (a configured, stable agent user UUID)
+//   2. ctx.agent_user_id (if a caller threaded one in)
+//   3. a seeded role='agent' user in the org (migration 025)
+async function resolveAgentUserId(svc: Svc, ctx: WorkflowExecutionContext): Promise<string | null> {
+  const envId = process.env.AI_AGENT_USER_ID
+  if (envId && envId.trim().length > 0) return envId.trim()
+  const ctxId = ctx.agent_user_id as string | undefined
+  if (ctxId) return ctxId
+  const { data } = await svc.from('users').select('id')
+    .eq('organization_id', ctx.organization_id).eq('role', 'agent')
+    .is('deleted_at', null).limit(1).maybeSingle()
+  return (data as { id: string } | null)?.id ?? null
+}
+
+// Deterministic AI session id (Sprint 6.3, TASK 2). session_id is a NOT-NULL
+// uuid with no FK, so we reuse a real run/job UUID for traceability:
+//   workflow_run_id → background_job_id → freshly generated UUID.
+function deriveSessionId(ctx: WorkflowExecutionContext): string {
+  return (ctx.session_id as string | undefined)
+    ?? (ctx.workflow_run_id as string | undefined)
+    ?? (ctx.job_id as string | undefined)
+    ?? crypto.randomUUID()
+}
+
+// agent_activity requires NOT-NULL agent_user_id + session_id. With migration
+// 025 seeding an agent user and 021 already granting service_role INSERT, this
+// now writes reliably. It remains non-fatal: a missing identity or a write
+// failure warns clearly but never breaks the workflow (TASK 4).
 async function recordAgentActivity(
   svc: Svc, ctx: WorkflowExecutionContext,
   promptId: string, model: string,
   provider: { usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }; latency_ms: number; mocked: boolean },
   estimatedCost: number,
+  workflowRunId: string | null,
+  stepId: string | null,
 ): Promise<void> {
   try {
-    let agentUserId = (ctx.agent_user_id as string | undefined) ?? null
+    const agentUserId = await resolveAgentUserId(svc, ctx)
     if (!agentUserId) {
-      const { data } = await svc.from('users').select('id')
-        .eq('organization_id', ctx.organization_id).eq('role', 'agent').limit(1).maybeSingle()
-      agentUserId = (data as { id: string } | null)?.id ?? null
-    }
-    if (!agentUserId) {
-      console.warn('[call_ai] no agent user in org — skipping agent_activity (non-fatal)')
+      console.warn('[call_ai] no AI agent identity (set AI_AGENT_USER_ID or run migration 025) — skipping agent_activity (non-fatal)')
       return
     }
-    const sessionId = (ctx.session_id as string | undefined) ?? crypto.randomUUID()
+    const sessionId = deriveSessionId(ctx)
+    const sessionNamespace = process.env.AI_AGENT_SESSION_NAMESPACE ?? null
 
     const { error } = await svc.from('agent_activity').insert({
       organization_id: ctx.organization_id,
@@ -165,6 +192,8 @@ async function recordAgentActivity(
       summary:         `call_ai ${promptId}`,
       metadata: {
         prompt_id: promptId, model,
+        workflow_run_id: workflowRunId, step_id: stepId,
+        session_namespace: sessionNamespace,
         prompt_tokens: provider.usage.prompt_tokens,
         completion_tokens: provider.usage.completion_tokens,
         total_tokens: provider.usage.total_tokens,

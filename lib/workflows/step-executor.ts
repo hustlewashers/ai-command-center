@@ -232,7 +232,7 @@ export async function executeStep(
         else if (accumulated[k] !== undefined && accumulated[k] !== null) variables[k] = accumulated[k]
       }
 
-      const result = await executeCallAi(promptId, variables, ctx)
+      const result = await executeCallAi(promptId, variables, ctx, step.id)
       return {
         step_id: step.id,
         type:    step.type,

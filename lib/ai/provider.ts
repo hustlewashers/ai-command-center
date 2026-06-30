@@ -65,8 +65,17 @@ export async function runAiProvider(input: ProviderInput): Promise<AiProviderRes
     throw new Error(`AI provider returned ${res.status}: ${detail.slice(0, 300)}`)
   }
 
-  const json = await res.json() as OpenAiResponse
+  let json: OpenAiResponse
+  try {
+    json = await res.json() as OpenAiResponse
+  } catch {
+    throw new Error('AI provider returned a non-JSON response body')
+  }
+
   const text = extractText(json)
+  if (!text || text.trim().length === 0) {
+    throw new Error('AI provider returned an empty response (no output text)')
+  }
   const usage = json.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 }
 
   return {

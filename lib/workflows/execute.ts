@@ -106,6 +106,10 @@ export async function executeWorkflow(
   }
   const runId = (runData as { id: string }).id
 
+  // Expose the run id to steps (e.g. call_ai uses it for a deterministic AI
+  // session id and telemetry linkage). Additive — does not change execution.
+  ctx.workflow_run_id = runId
+
   // ── Link background_job → workflow_run (non-fatal) ──────────────────────────
   // Don't block execution if this backlink write fails.
   if (jobId) {

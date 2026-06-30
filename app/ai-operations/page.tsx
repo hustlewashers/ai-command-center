@@ -10,6 +10,7 @@ import {
   getRecentAiExecutionLogs,
   getRecentAiWorkflowRuns,
   getRecentAiDraftOutputs,
+  getRecentAiErrors,
 } from '@/lib/ai/metrics'
 import { listPrompts } from '@/lib/ai/prompts'
 
@@ -23,11 +24,12 @@ export default async function AiOperationsPage() {
     redirect('/login')
   }
 
-  const [summary, logs, runs, outputs] = await Promise.all([
+  const [summary, logs, runs, outputs, errors] = await Promise.all([
     getAiMetricSummary(supabase),
     getRecentAiExecutionLogs(supabase, 20),
     getRecentAiWorkflowRuns(supabase, 20),
     getRecentAiDraftOutputs(supabase, 20),
+    getRecentAiErrors(supabase, 10),
   ])
   const prompts = listPrompts()
 
@@ -38,6 +40,8 @@ export default async function AiOperationsPage() {
     { label: 'Avg Latency', value: summary.avg_latency_ms !== null ? formatMs(summary.avg_latency_ms) : '—', color: '#6b7280' },
     { label: 'Total Tokens', value: summary.total_tokens.toLocaleString(), color: '#7c3aed' },
     { label: 'Est. Cost', value: `$${summary.estimated_cost_usd.toFixed(4)}`, color: '#b45309' },
+    { label: 'Provider', value: summary.provider_mode, color: summary.provider_mode === 'live' ? '#16a34a' : summary.provider_mode === 'mock' ? '#d97706' : '#9ca3af' },
+    { label: 'Agent Activity', value: `${summary.agent_activity_count}${summary.last_agent_activity_at ? ` · ${formatDate(summary.last_agent_activity_at)}` : ''}`, color: '#0891b2' },
   ]
 
   return (
@@ -57,6 +61,32 @@ export default async function AiOperationsPage() {
           </div>
         ))}
       </div>
+
+      {/* Latest AI errors (Sprint 6.3) */}
+      {errors.length > 0 && (
+        <div style={ds.section}>
+          <h2 style={ds.h2}>Latest AI Errors ({errors.length})</h2>
+          <table style={s.table}>
+            <thead><tr>
+              <th style={s.th}>Time</th><th style={s.th}>Prompt</th><th style={s.th}>Error</th>
+            </tr></thead>
+            <tbody>
+              {errors.map(e => {
+                const m = e.metadata ?? {}
+                return (
+                  <tr key={e.id}>
+                    <td style={{ ...s.td, whiteSpace: 'nowrap' }}>{formatDate(e.occurred_at)}</td>
+                    <td style={s.td}><code>{(m.prompt_id as string) ?? '—'}</code></td>
+                    <td style={{ ...s.td, maxWidth: 520, wordBreak: 'break-word', color: '#dc2626' }}>
+                      {safeText((m.error as string) ?? e.summary, 200)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Prompt registry (TASK 6) — in-code, read-only */}
       <div style={ds.section}>
