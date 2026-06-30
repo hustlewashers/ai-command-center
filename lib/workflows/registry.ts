@@ -35,6 +35,40 @@ const WORKFLOWS: Record<string, WorkflowDefinition> = {
       },
     ],
   },
+
+  // Sprint 6.1 — first governed AI workflow. Manual trigger only (no `triggers`):
+  // AI summarizes a request into a DRAFT output, then a PENDING approval is opened
+  // for human review. No delivery, no auto-approval, no irreversible action.
+  request_ai_summary: {
+    id:          'request_ai_summary',
+    name:        'Request → AI Summary (draft)',
+    description: 'AI summarizes a request into a draft output and opens a pending approval for human review.',
+    steps: [
+      {
+        id:   'log_start',
+        type: 'write_execution_log',
+        params: { message: 'Workflow started: request_ai_summary' },
+      },
+      {
+        id:   'ai_summarize',
+        type: 'call_ai',
+        params: { prompt_id: 'REQUEST_SUMMARIZER', input_keys: ['intent', 'title'] },
+      },
+      {
+        id:   'create_summary_output',
+        type: 'create_output',
+        params: { output_type: 'report' },
+      },
+      {
+        id:   'request_review',
+        type: 'request_approval',
+      },
+      {
+        id:   'complete',
+        type: 'complete',
+      },
+    ],
+  },
 }
 
 export function getWorkflow(id: string): WorkflowDefinition | undefined {

@@ -5,6 +5,7 @@ export type WorkflowStepType =
   | 'create_output'
   | 'request_approval'
   | 'complete'
+  | 'call_ai'
 
 export interface WorkflowStepDefinition {
   id: string
