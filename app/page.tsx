@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { resolveUserContext } from '@/lib/auth/context'
 import { StatusBadge } from '@/components/ui'
+import { getAiMetricSummary } from '@/lib/ai/metrics'
 import type { UserContext } from '@/types/api'
 
 // ---------- row types ----------
@@ -89,6 +90,19 @@ function KpiCard({
       <span style={s.kpiValue}>{value}</span>
       <span style={s.kpiLabel}>{label}</span>
       <span style={s.kpiSub}>{sub}</span>
+    </Link>
+  )
+}
+
+// Like KpiCard but for non-numeric values (cost/latency strings).
+function AiTextCard({
+  label, value, href, color,
+}: { label: string; value: string; href: string; color: string }) {
+  return (
+    <Link href={href} style={{ ...s.kpiCard, borderTop: `3px solid ${color}` }}>
+      <span style={{ ...s.kpiValue, fontSize: '1.4rem' }}>{value}</span>
+      <span style={s.kpiLabel}>{label}</span>
+      <span style={s.kpiSub}>ai operations</span>
     </Link>
   )
 }
@@ -306,6 +320,9 @@ export default async function DashboardPage({
     return st === undefined || st === 'failed' || st === 'cancelled'
   }).length
 
+  // AI Operations summary (Sprint 6.2) — lightweight single read.
+  const aiSummary = await getAiMetricSummary(supabase)
+
   const wfRecoverable = wfHealth.failed + (wfCancelledResult.count ?? 0)
   const workflowHealthCards = [
     { label: 'Pending',        value: wfHealth.pending,        href: '/workflow-runs?status=pending',   color: '#6b7280' },
@@ -456,6 +473,15 @@ export default async function DashboardPage({
             sub="workflow runs"
           />
         ))}
+      </div>
+
+      {/* AI Operations (Sprint 6.2) */}
+      <h2 style={s.sectionTitle}>AI Operations</h2>
+      <div style={{ ...s.kpiRow, gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        <KpiCard label="AI Runs"     value={aiSummary.executions}     href="/ai-operations" color="#2563eb" sub="executions" />
+        <KpiCard label="AI Failed"   value={aiSummary.failed}         href="/ai-operations" color={aiSummary.failed > 0 ? '#dc2626' : '#6b7280'} sub="failed" />
+        <AiTextCard label="Est. Cost"   value={`$${aiSummary.estimated_cost_usd.toFixed(4)}`} href="/ai-operations" color="#b45309" />
+        <AiTextCard label="Avg Latency" value={aiSummary.avg_latency_ms !== null ? `${aiSummary.avg_latency_ms} ms` : '—'} href="/ai-operations" color="#7c3aed" />
       </div>
 
       {/* Active Alerts — only rendered when there is something to show */}

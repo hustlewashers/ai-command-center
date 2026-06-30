@@ -10,7 +10,7 @@ import type {
 } from '@/types/workflow-runs'
 import type { ExecutionLogRow } from '@/types/execution-logs'
 import { getRecoveryEligibility } from '@/lib/workflows/recovery'
-import { EntityHeader, MetaGrid, TraceLinks, ds } from '@/components/detail'
+import { EntityHeader, MetaGrid, TraceLinks, JsonPreview, ds } from '@/components/detail'
 import type { MetaItem } from '@/components/detail'
 import { formatMs, jsonPreview, shortId } from '@/lib/ui/format'
 import WorkflowRecoveryActions from './WorkflowRecoveryActions'
@@ -121,6 +121,13 @@ export default async function WorkflowRunDetailPage({
     background: RUN_STATUS_COLOR[run.status] ?? '#6b7280',
   }
 
+  // AI step highlighting (Sprint 6.2): call_ai steps + token/latency from the
+  // agent:ai 'completed' execution log (output_payload carries prompt/model/confidence).
+  const aiSteps = steps.filter(st => st.step_type === 'call_ai')
+  const aiCompletedLog = logs.find(l =>
+    l.actor === 'agent:ai' && (l.metadata as Record<string, unknown> | null)?.['phase'] === 'completed')
+  const aiLogMeta = (aiCompletedLog?.metadata ?? {}) as Record<string, unknown>
+
   const runFields: MetaItem[] = [
     { label: 'Run ID', value: <code style={{ wordBreak: 'break-all' }}>{run.id}</code> },
     { label: 'Workflow', value: <code>{run.workflow_id}</code> },
@@ -208,11 +215,15 @@ export default async function WorkflowRunDetailPage({
                   fontSize: 11, fontWeight: 700, color: '#fff',
                   background: STEP_STATUS_COLOR[step.status] ?? '#6b7280',
                 }
+                const isAi = step.step_type === 'call_ai'
                 return (
-                  <tr key={step.id}>
+                  <tr key={step.id} style={isAi ? { background: '#eff6ff' } : undefined}>
                     <td style={s.td}>{step.step_index}</td>
                     <td style={s.td}><code>{step.step_id}</code></td>
-                    <td style={s.td}><code>{step.step_type}</code></td>
+                    <td style={s.td}>
+                      <code>{step.step_type}</code>
+                      {isAi && <span style={{ marginLeft: 6, background: '#2563eb', color: '#fff', borderRadius: 3, padding: '1px 5px', fontSize: 10, fontWeight: 700 }}>AI</span>}
+                    </td>
                     <td style={s.td}><span style={stepBadge}>{step.status}</span></td>
                     <td style={s.td}>{formatMs(step.duration_ms)}</td>
                     <td style={s.td}>{fmt(step.started_at)}</td>
@@ -237,6 +248,34 @@ export default async function WorkflowRunDetailPage({
           </table>
         )}
       </div>
+
+      {/* AI Step Detail (Sprint 6.2) — only when a call_ai step exists */}
+      {aiSteps.map(step => {
+        const op = (step.output_payload ?? {}) as Record<string, unknown>
+        const aiResult = (op['ai_result'] ?? {}) as Record<string, unknown>
+        const aiFields: MetaItem[] = [
+          { label: 'Step', value: <code>{step.step_id}</code> },
+          { label: 'Status', value: step.status },
+          { label: 'Prompt', value: <code>{(op['prompt_id'] as string) ?? '—'}</code> },
+          { label: 'Model', value: <code>{(op['model'] as string) ?? '—'}</code> },
+          { label: 'Confidence', value: typeof op['confidence'] === 'number' ? String(op['confidence']) : '—' },
+          { label: 'Risk Level', value: <code>{(aiResult['risk_level'] as string) ?? '—'}</code> },
+          { label: 'Total Tokens', value: typeof aiLogMeta['total_tokens'] === 'number' ? (aiLogMeta['total_tokens'] as number).toLocaleString() : '—' },
+          { label: 'Latency', value: typeof aiLogMeta['latency_ms'] === 'number' ? formatMs(aiLogMeta['latency_ms'] as number) : '—' },
+          { label: 'Validation', value: Object.keys(aiResult).length > 0 ? 'passed (schema-validated)' : '—' },
+          { label: 'Mocked', value: aiLogMeta['mocked'] === true ? 'yes (no OPENAI_API_KEY)' : 'no' },
+        ]
+        return (
+          <div key={step.id} style={s.section}>
+            <h2 style={ds.h2}>AI Step Detail — {step.step_id}</h2>
+            <MetaGrid items={aiFields} />
+            <div style={{ marginTop: 12 }}>
+              <div style={{ ...ds.label, marginBottom: 4 }}>AI Result (validated)</div>
+              <JsonPreview value={aiResult} max={1200} />
+            </div>
+          </div>
+        )
+      })}
 
       {/* Execution Logs — bespoke table kept intentionally */}
       <div style={s.section}>
