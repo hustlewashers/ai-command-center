@@ -17,6 +17,7 @@ import { listAiWorkflows } from '@/lib/ai/workflows'
 import { listAiWorkflowTemplates } from '@/lib/ai/workflow-templates'
 import { listAiCapabilities } from '@/lib/ai/capabilities'
 import { listAiSkills } from '@/lib/ai/skills'
+import { listAiAgents } from '@/lib/ai/agents'
 
 // Sprint 6.2 — AI Operations. RLS-safe reads only (SSR client, never service-role).
 export default async function AiOperationsPage() {
@@ -41,6 +42,7 @@ export default async function AiOperationsPage() {
   const aiTemplates = listAiWorkflowTemplates()
   const aiCapabilities = listAiCapabilities()
   const aiSkills = listAiSkills()
+  const aiAgents = listAiAgents()
 
   const cards = [
     { label: 'Executions', value: String(summary.executions), color: '#2563eb' },
@@ -97,6 +99,44 @@ export default async function AiOperationsPage() {
         </div>
       )}
 
+      {/* AI Agent Registry (Sprint 7.5) — governed roles, NON-EXECUTABLE metadata */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Agent Registry ({aiAgents.length} in-code)</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
+          Governed roles that may <em>eventually</em> compose skills, capabilities, and workflows.
+          <strong> Agents do not act autonomously yet — they are read-only metadata.</strong> They execute
+          nothing, register no prompt, and cannot bypass approvals or auto-deliver. <code>planned</code> agents
+          have incomplete chains.
+        </p>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>Agent ID</th><th style={s.th}>Name</th><th style={s.th}>Category</th>
+            <th style={s.th}>Purpose</th><th style={s.th}>Scope</th>
+            <th style={s.th}>Allowed Skills</th><th style={s.th}>Allowed Capabilities</th><th style={s.th}>Allowed Workflows</th>
+            <th style={s.th}>Governance</th><th style={s.th}>Status</th>
+          </tr></thead>
+          <tbody>
+            {aiAgents.map(a => (
+              <tr key={a.id}>
+                <td style={s.td}><code>{a.id}</code></td>
+                <td style={s.td}>{a.name}</td>
+                <td style={s.td}><code>{a.category}</code></td>
+                <td style={{ ...s.td, maxWidth: 220 }}>{a.purpose}</td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{a.scope.target_entities.length > 0 ? a.scope.target_entities.join(', ') : 'none'}</code></td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{a.allowed_skill_ids.length > 0 ? a.allowed_skill_ids.join(', ') : '—'}</code></td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{a.allowed_capability_ids.length > 0 ? a.allowed_capability_ids.join(', ') : '—'}</code></td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{a.allowed_workflow_ids.length > 0 ? a.allowed_workflow_ids.join(', ') : '—'}</code></td>
+                <td style={s.td}>
+                  {a.governance_policy.requires_human_approval ? 'approval-gated' : 'none'}
+                  {', non-executable'}
+                </td>
+                <td style={s.td}><StatusBadge status={a.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {/* AI Skill Registry (Sprint 7.4) — reusable AI operations, read-only */}
       <div style={ds.section}>
         <h2 style={ds.h2}>AI Skill Registry ({aiSkills.length} in-code)</h2>
@@ -108,7 +148,7 @@ export default async function AiOperationsPage() {
         <table style={s.table}>
           <thead><tr>
             <th style={s.th}>Skill ID</th><th style={s.th}>Name</th><th style={s.th}>Category</th>
-            <th style={s.th}>Purpose</th><th style={s.th}>Default Capability</th><th style={s.th}>Default Prompt</th>
+            <th style={s.th}>Default Capability</th><th style={s.th}>Default Prompt</th><th style={s.th}>Supported Agents</th>
             <th style={s.th}>Input Entities</th><th style={s.th}>Output Types</th><th style={s.th}>Governance</th><th style={s.th}>Status</th>
           </tr></thead>
           <tbody>
@@ -117,9 +157,9 @@ export default async function AiOperationsPage() {
                 <td style={s.td}><code>{sk.id}</code></td>
                 <td style={s.td}>{sk.name}</td>
                 <td style={s.td}><code>{sk.category}</code></td>
-                <td style={{ ...s.td, maxWidth: 240 }}>{sk.purpose}</td>
                 <td style={s.td}>{sk.default_capability_id ? <code>{sk.default_capability_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{sk.default_prompt_id ? <code>{sk.default_prompt_id}</code> : <span style={ds.empty}>—</span>}</td>
+                <td style={s.td}>{sk.supported_agent_ids && sk.supported_agent_ids.length > 0 ? <code style={{ fontSize: 11 }}>{sk.supported_agent_ids.join(', ')}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}><code style={{ fontSize: 11 }}>{sk.supported_input_entities.join(', ')}</code></td>
                 <td style={s.td}><code style={{ fontSize: 11 }}>{sk.supported_output_types.join(', ')}</code></td>
                 <td style={s.td}>{sk.governance_policy.approval_required ? 'approval + human review' : 'none'}{sk.governance_policy.draft_only ? ', draft-only' : ''}</td>
@@ -142,7 +182,7 @@ export default async function AiOperationsPage() {
           <thead><tr>
             <th style={s.th}>Capability ID</th><th style={s.th}>Name</th><th style={s.th}>Category</th>
             <th style={s.th}>Default Skill</th><th style={s.th}>Default Prompt</th><th style={s.th}>Default Template</th>
-            <th style={s.th}>Target Entities</th><th style={s.th}>Governance</th><th style={s.th}>Status</th>
+            <th style={s.th}>Supported Agents</th><th style={s.th}>Governance</th><th style={s.th}>Status</th>
           </tr></thead>
           <tbody>
             {aiCapabilities.map(c => (
@@ -153,7 +193,7 @@ export default async function AiOperationsPage() {
                 <td style={s.td}>{c.default_skill_id ? <code>{c.default_skill_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{c.default_prompt_id ? <code>{c.default_prompt_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{c.default_template_id ? <code>{c.default_template_id}</code> : <span style={ds.empty}>—</span>}</td>
-                <td style={s.td}><code style={{ fontSize: 11 }}>{c.supported_target_entities.join(', ')}</code></td>
+                <td style={s.td}>{c.supported_agent_ids && c.supported_agent_ids.length > 0 ? <code style={{ fontSize: 11 }}>{c.supported_agent_ids.join(', ')}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{c.governance_policy.approval_required ? 'approval + human review' : 'none'}{c.governance_policy.draft_only ? ', draft-only' : ''}</td>
                 <td style={s.td}><StatusBadge status={c.status} /></td>
               </tr>
@@ -202,14 +242,15 @@ export default async function AiOperationsPage() {
         </p>
         <table style={s.table}>
           <thead><tr>
-            <th style={s.th}>AI Workflow ID</th><th style={s.th}>Capability</th><th style={s.th}>Template</th>
-            <th style={s.th}>Runtime Workflow</th><th style={s.th}>Prompt</th>
+            <th style={s.th}>AI Workflow ID</th><th style={s.th}>Agent</th><th style={s.th}>Capability</th>
+            <th style={s.th}>Template</th><th style={s.th}>Runtime Workflow</th><th style={s.th}>Prompt</th>
             <th style={s.th}>Approval</th><th style={s.th}>Status</th>
           </tr></thead>
           <tbody>
             {aiWorkflows.map(w => (
               <tr key={w.id}>
                 <td style={s.td}><code>{w.id}</code></td>
+                <td style={s.td}>{w.agent_id ? <code>{w.agent_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{w.capability_id ? <code>{w.capability_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{w.template_id ? <code>{w.template_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}><code>{w.runtime_workflow_id}</code></td>

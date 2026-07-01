@@ -138,6 +138,7 @@ export interface AiWorkflowDefinition {
   status: AiWorkflowStatus
   template_id?: AiWorkflowTemplateId   // Sprint 7.1 — template this workflow follows
   capability_id?: AiCapabilityId       // Sprint 7.3 — capability this workflow realizes
+  agent_id?: AiAgentId                 // Sprint 7.5 — agent that composes this workflow
 }
 
 // ── AI Capability Registry (Sprint 7.3) ──
@@ -202,6 +203,7 @@ export interface AiCapabilityDefinition {
   forbidden_actions: string[]               // what it may NEVER do
   status: AiCapabilityStatus
   default_skill_id?: AiSkillId              // Sprint 7.4 — skill this capability composes
+  supported_agent_ids?: AiAgentId[]         // Sprint 7.5 — agents that may use this capability
 }
 
 // ── AI Skill Registry (Sprint 7.4) ──
@@ -276,6 +278,74 @@ export interface AiSkillDefinition {
   allowed_actions: string[]
   forbidden_actions: string[]
   status: AiSkillStatus
+  supported_agent_ids?: AiAgentId[]   // Sprint 7.5 — agents that may compose this skill
+}
+
+// ── AI Agent Registry (Sprint 7.5) ──
+// The top of the registry stack: an AGENT is a governed ROLE that may EVENTUALLY
+// compose skills, capabilities, and workflows toward a goal. This sprint is
+// read-model / metadata ONLY — agents are NON-EXECUTABLE. They act autonomously
+// NOWHERE: they hold no privilege, run no workflow, register no prompt, and do
+// not orchestrate anything. The registry defines the governed roles that a future
+// agent-execution sprint could bring to life under the same draft-only, human-
+// approval-gated guarantees.
+
+export type AiAgentId =
+  | 'request_summary_assistant'
+  | 'risk_review_analyst'
+  | 'action_recommendation_advisor'
+  | 'operations_monitor'
+
+export type AiAgentCategory =
+  | 'assistant'
+  | 'analyst'
+  | 'reviewer'
+  | 'router'
+  | 'planner'
+  | 'operator'
+  | 'monitor'
+
+// active  → the agent's composed chain (skills/capability/workflow) is registered
+//           and working, even though the agent itself does not yet execute.
+// planned → declared role only; parts of its chain may not exist yet.
+// retired → kept for provenance; no longer offered.
+export type AiAgentStatus = 'active' | 'planned' | 'retired'
+
+// The bounded surface an agent is permitted to operate over (documentation of
+// intent; nothing here grants execution in this sprint).
+export interface AiAgentScope {
+  target_entities: AiWorkflowTargetEntity[]
+  description: string
+}
+
+// Governance intent restated per agent. Declarative — the runtime + RLS enforce
+// the actual gates; this documents and cannot loosen them. For Sprint 7.5 the
+// execution-bearing flags are hard-false.
+export interface AiAgentGovernancePolicy {
+  requires_human_approval: boolean
+  may_create_drafts: boolean
+  may_execute_workflows: false        // always false this sprint — agents are non-executable
+  may_mutate_governed_state: false    // always false — AI proposes, humans dispose
+  may_deliver_outputs: false          // always false — no auto-delivery
+  requires_audit_logging: boolean
+}
+
+export interface AiAgentDefinition {
+  id: AiAgentId
+  name: string
+  category: AiAgentCategory
+  purpose: string
+  description: string
+  scope: AiAgentScope
+  allowed_skill_ids: AiSkillId[]
+  allowed_capability_ids: AiCapabilityId[]
+  allowed_workflow_ids: AiWorkflowId[]
+  default_prompt_ids: AiPromptId[]
+  governance_policy: AiAgentGovernancePolicy
+  evaluation_signals: string[]
+  allowed_actions: string[]
+  forbidden_actions: string[]
+  status: AiAgentStatus
 }
 
 // ── AI Workflow Template Layer (Sprint 7.1) ──

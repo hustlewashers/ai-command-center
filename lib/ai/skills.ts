@@ -69,6 +69,7 @@ const AI_SKILLS: Record<AiSkillId, AiSkillDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'active',
+    supported_agent_ids: ['request_summary_assistant'],
   },
 
   // 2) Planned — no prompt, no runtime workflow yet.
@@ -97,6 +98,7 @@ const AI_SKILLS: Record<AiSkillId, AiSkillDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    supported_agent_ids: ['risk_review_analyst'],
   },
 
   // 3) Planned — no prompt, no runtime workflow yet.
@@ -123,6 +125,7 @@ const AI_SKILLS: Record<AiSkillId, AiSkillDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    supported_agent_ids: ['risk_review_analyst'],
   },
 
   // 4) Planned — no prompt, no runtime workflow yet.
@@ -151,6 +154,7 @@ const AI_SKILLS: Record<AiSkillId, AiSkillDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    supported_agent_ids: ['action_recommendation_advisor'],
   },
 
   // 5) Planned — generic extraction; no capability, prompt, or workflow yet.
