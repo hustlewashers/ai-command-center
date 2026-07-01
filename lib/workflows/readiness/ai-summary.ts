@@ -1,7 +1,26 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { UserContext } from '@/types/api'
+import type { AiWorkflowReadinessRequirements } from '@/types/ai'
+import { getAiWorkflow } from '@/lib/ai/workflows'
 
 export const REQUEST_AI_SUMMARY_WORKFLOW_ID = 'request_ai_summary'
+
+// Fallback readiness requirements — identical to request_ai_summary's declared
+// requirements. Used only if the AI workflow registry entry is missing, so
+// behavior never silently loosens.
+const DEFAULT_READINESS_REQUIREMENTS: AiWorkflowReadinessRequirements = {
+  require_project:     true,
+  require_department:  true,
+  require_linked_task: true,
+  block_active_run:    true,
+  block_active_job:    true,
+  block_failed:        true,
+  block_completed:     true,
+}
+
+function readinessRequirements(): AiWorkflowReadinessRequirements {
+  return getAiWorkflow(REQUEST_AI_SUMMARY_WORKFLOW_ID)?.readiness ?? DEFAULT_READINESS_REQUIREMENTS
+}
 
 export type AiSummaryReadinessStatus =
   | 'ready'
@@ -122,6 +141,7 @@ export function evaluateRequestAiSummaryReadiness(input: {
   approval_id: string | null
 }): RequestAiSummaryReadiness {
   const { request, ctx, linked_task_id, latest_run, active_job } = input
+  const reqs = readinessRequirements()
   const blockers: AiSummaryBlockerCode[] = []
   const warnings: string[] = []
   const departmentId = request.routed_department_id ?? ctx.departmentId
@@ -131,11 +151,11 @@ export function evaluateRequestAiSummaryReadiness(input: {
   if (ctx.role === 'read_only') blockers.push('read_only')
   else if (!isRoleAllowed(ctx, request)) blockers.push('role_not_allowed')
 
-  if (!departmentId) blockers.push('missing_department')
-  if (!request.project_id) blockers.push('missing_project')
-  if (!linked_task_id) blockers.push('missing_task')
+  if (reqs.require_department && !departmentId) blockers.push('missing_department')
+  if (reqs.require_project && !request.project_id) blockers.push('missing_project')
+  if (reqs.require_linked_task && !linked_task_id) blockers.push('missing_task')
 
-  if (latest_run && ACTIVE_RUN_STATUSES.includes(latest_run.status)) {
+  if (reqs.block_active_run && latest_run && ACTIVE_RUN_STATUSES.includes(latest_run.status)) {
     blockers.push('active_run_exists')
     return emptyReadiness(request.id, {
       status: 'active',
@@ -149,7 +169,7 @@ export function evaluateRequestAiSummaryReadiness(input: {
     })
   }
 
-  if (active_job) {
+  if (reqs.block_active_job && active_job) {
     blockers.push('active_job_exists')
     return emptyReadiness(request.id, {
       status: 'active',
@@ -163,7 +183,7 @@ export function evaluateRequestAiSummaryReadiness(input: {
     })
   }
 
-  if (latest_run?.status === 'failed') {
+  if (reqs.block_failed && latest_run?.status === 'failed') {
     blockers.push('failed_run_exists')
     return emptyReadiness(request.id, {
       status: 'failed',
@@ -180,7 +200,7 @@ export function evaluateRequestAiSummaryReadiness(input: {
     })
   }
 
-  if (latest_run?.status === 'completed') {
+  if (reqs.block_completed && latest_run?.status === 'completed') {
     blockers.push('completed_exists')
     if (outputId && !resolvedApprovalId) {
       warnings.push('AI draft output exists, but no pending approval link was found.')

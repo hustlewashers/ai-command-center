@@ -13,6 +13,7 @@ import {
   getRecentAiErrors,
 } from '@/lib/ai/metrics'
 import { listPrompts } from '@/lib/ai/prompts'
+import { listAiWorkflows } from '@/lib/ai/workflows'
 
 // Sprint 6.2 — AI Operations. RLS-safe reads only (SSR client, never service-role).
 export default async function AiOperationsPage() {
@@ -32,6 +33,7 @@ export default async function AiOperationsPage() {
     getRecentAiErrors(supabase, 10),
   ])
   const prompts = listPrompts()
+  const aiWorkflows = listAiWorkflows()
 
   const cards = [
     { label: 'Executions', value: String(summary.executions), color: '#2563eb' },
@@ -87,6 +89,35 @@ export default async function AiOperationsPage() {
           </table>
         </div>
       )}
+
+      {/* AI Workflow Registry (Sprint 7.0) — in-code coordination layer, read-only */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Workflow Registry ({aiWorkflows.length} in-code)</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
+          Governed AI workflows. Metadata only — execution is owned by the runtime workflow registry;
+          every workflow with <code>approval required = yes</code> opens a pending human approval and never auto-delivers.
+        </p>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>AI Workflow ID</th><th style={s.th}>Runtime Workflow</th><th style={s.th}>Prompt</th>
+            <th style={s.th}>Purpose</th><th style={s.th}>Required Inputs</th>
+            <th style={s.th}>Approval</th><th style={s.th}>Status</th>
+          </tr></thead>
+          <tbody>
+            {aiWorkflows.map(w => (
+              <tr key={w.id}>
+                <td style={s.td}><code>{w.id}</code></td>
+                <td style={s.td}><code>{w.runtime_workflow_id}</code></td>
+                <td style={s.td}><code>{w.prompt_id}</code></td>
+                <td style={{ ...s.td, maxWidth: 300 }}>{w.purpose}</td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{w.required_inputs.join(', ')}</code></td>
+                <td style={s.td}>{w.approval_required ? 'yes' : 'no'}</td>
+                <td style={s.td}><StatusBadge status={w.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {/* Prompt registry (TASK 6) — in-code, read-only */}
       <div style={ds.section}>

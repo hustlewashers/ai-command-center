@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { REQUEST_AI_SUMMARY_WORKFLOW_ID } from '@/lib/workflows/readiness/ai-summary'
+import { aiRuntimeWorkflowIds } from '@/lib/ai/workflows'
 
 // Sprint 6.6 — shared, read-only read model for AI draft review context.
 //
@@ -175,13 +175,16 @@ async function resolveRun(
   outputId: string | null,
 ): Promise<RunRow | null> {
   const cols = 'id, status, accumulated, trigger_entity_id'
+  // Any registered governed AI workflow counts — not just request_ai_summary — so
+  // new AI workflows are recognized without editing this read model.
+  const aiWorkflowIds = aiRuntimeWorkflowIds()
 
   if (opts.workflow_run_id) {
     const { data } = await supabase
       .from('workflow_runs')
       .select(cols)
       .eq('id', opts.workflow_run_id)
-      .eq('workflow_id', REQUEST_AI_SUMMARY_WORKFLOW_ID)
+      .in('workflow_id', aiWorkflowIds)
       .maybeSingle()
     return (data ?? null) as unknown as RunRow | null
   }
@@ -190,7 +193,7 @@ async function resolveRun(
     const { data } = await supabase
       .from('workflow_runs')
       .select(cols)
-      .eq('workflow_id', REQUEST_AI_SUMMARY_WORKFLOW_ID)
+      .in('workflow_id', aiWorkflowIds)
       .eq('trigger_entity_type', 'request')
       .eq('trigger_entity_id', opts.request_id)
       .order('created_at', { ascending: false })
@@ -203,7 +206,7 @@ async function resolveRun(
     const { data } = await supabase
       .from('workflow_runs')
       .select(cols)
-      .eq('workflow_id', REQUEST_AI_SUMMARY_WORKFLOW_ID)
+      .in('workflow_id', aiWorkflowIds)
       .filter('accumulated->>output_id', 'eq', outputId)
       .order('created_at', { ascending: false })
       .limit(1)
