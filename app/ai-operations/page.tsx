@@ -167,9 +167,10 @@ export default async function AiOperationsPage() {
 
       {/* Recent draft outputs */}
       <div style={ds.section}>
-        <h2 style={ds.h2}>Recent Draft Outputs ({outputs.length})</h2>
+        <h2 style={ds.h2}>Recent Draft Outputs (AI-related when linked) ({outputs.length})</h2>
         <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
-          AI workflows produce draft outputs awaiting human approval (this list may include non-AI drafts).
+          Draft outputs awaiting human approval. This list is a broad proxy and may include drafts not
+          produced by an AI step — open an output to confirm AI provenance.
         </p>
         {outputs.length === 0 ? <div style={ds.empty}>No draft outputs.</div> : (
           <table style={s.table}>

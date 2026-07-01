@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/ui'
 import { EntityHeader, MetaGrid, RelatedList, DetailRow, Tag, ds } from '@/components/detail'
 import type { MetaItem } from '@/components/detail'
 import { formatDate, shortId, safeText } from '@/lib/ui/format'
+import { getAiDraftReviewContext } from '@/lib/ai/draft-review'
 import ApprovalActions from './ApprovalActions'
 import type { ApprovalRow } from '@/types/approvals'
 
@@ -85,6 +86,12 @@ export default async function ApprovalDetailPage({
     .order('created_at', { ascending: false }).limit(20)
   if (!runRes.error) runs = (runRes.data ?? []) as unknown as RunRow[]
 
+  // AI review context (Sprint 6.6) — only when the subject is an AI draft output
+  // produced by a governed request_ai_summary run. Read-only; partial on RLS.
+  const aiContext = approval.subject_type === 'output'
+    ? await getAiDraftReviewContext(supabase, { approval_id: approval.id })
+    : null
+
   const canResolve = approval.status === 'pending' && RESOLVE_ROLES.has(context.role)
 
   const subjectIdCell = subjectVisible && subjectHref
@@ -131,6 +138,29 @@ export default async function ApprovalDetailPage({
         <h2 style={ds.h2}>Approval</h2>
         <MetaGrid items={fields} />
       </div>
+
+      {/* AI Review Context (Sprint 6.6) */}
+      {aiContext?.is_ai && (
+        <div style={ds.section}>
+          <h2 style={ds.h2}>AI Review Context</h2>
+          <MetaGrid items={[
+            { label: 'Draft Output', value: aiContext.output ? <Link href={`/outputs/${aiContext.output.id}`} style={ds.link}>{aiContext.output.title || shortId(aiContext.output.id)}</Link> : <span style={ds.dim}>hidden or not created</span> },
+            { label: 'Source Request', value: aiContext.request ? <Link href={`/requests/${aiContext.request.id}#ai-summary`} style={ds.link}>{shortId(aiContext.request.id)}</Link> : <span style={ds.dim}>—</span> },
+            { label: 'Workflow Run', value: aiContext.workflow_run ? <Link href={`/workflow-runs/${aiContext.workflow_run.id}`} style={ds.link}>{shortId(aiContext.workflow_run.id)} ({aiContext.workflow_run.status})</Link> : <span style={ds.dim}>—</span> },
+            { label: 'Prompt', value: aiContext.prompt_id ? <code>{aiContext.prompt_id}</code> : <span style={ds.dim}>—</span> },
+            { label: 'Model', value: aiContext.model ? <code>{aiContext.model}</code> : <span style={ds.dim}>—</span> },
+            { label: 'Confidence', value: aiContext.confidence !== null ? aiContext.confidence.toFixed(2) : <span style={ds.dim}>—</span> },
+            { label: 'Risk Level', value: aiContext.risk_level ? <Tag>{aiContext.risk_level}</Tag> : <span style={ds.dim}>—</span> },
+            ...(aiContext.summary ? [{ label: 'Summary Preview', value: aiContext.summary.length > 400 ? `${aiContext.summary.slice(0, 400)}…` : aiContext.summary, full: true }] as MetaItem[] : []),
+            ...(aiContext.recommended_next_steps && aiContext.recommended_next_steps.length > 0
+              ? [{ label: 'Recommended Next Steps', value: <ul style={{ margin: 0, paddingLeft: 18 }}>{aiContext.recommended_next_steps.map((s, i) => <li key={i} style={{ wordBreak: 'break-word' }}>{s}</li>)}</ul>, full: true }] as MetaItem[]
+              : []),
+          ]} />
+          <p style={{ fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '10px 12px', margin: '12px 0 0' }}>
+            Approving this approval authorizes the draft output for the next governed step; it does not mean the AI is automatically trusted.
+          </p>
+        </div>
+      )}
 
       {/* Actions */}
       <div style={ds.section}>

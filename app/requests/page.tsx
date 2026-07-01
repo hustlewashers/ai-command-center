@@ -22,7 +22,7 @@ type CreatedRequest = RequestRow & {
 
 // Lightweight AI summary signal for the request list (Sprint 6.5). This is a
 // conservative batched signal, not the full request-detail readiness model.
-function aiSignal(ai: { run_id: string | null; status: string | null; signal: RequestAiSummarySignal; reason: string } | null): React.ReactNode {
+function aiSignal(ai: { run_id: string | null; status: string | null; signal: RequestAiSummarySignal; reason: string } | null, requestId?: string): React.ReactNode {
   if (!ai) return <span style={{ color: '#bbb', fontSize: '0.72rem' }}>none</span>
   const cfg: Record<RequestAiSummarySignal, { label: string; color: string }> = {
     ready:          { label: 'ready', color: '#16a34a' },
@@ -39,6 +39,14 @@ function aiSignal(ai: { run_id: string | null; status: string | null; signal: Re
       {label}
     </span>
   )
+  // A ready draft points to the request's AI review panel; other states link to the run.
+  if (ai.signal === 'draft_ready' && requestId) {
+    return (
+      <Link href={`/requests/${requestId}#ai-summary`} style={{ textDecoration: 'none' }}>
+        {badge}
+      </Link>
+    )
+  }
   if (!ai.run_id) return badge
   return (
     <Link href={`/workflow-runs/${ai.run_id}`} style={{ textDecoration: 'none' }}>
@@ -204,7 +212,7 @@ export default function RequestsPage() {
                         <span style={s.wfNone}>none</span>
                       )}
                     </td>
-                    <td style={s.td}>{aiSignal(r.ai_summary)}</td>
+                    <td style={s.td}>{aiSignal(r.ai_summary, r.id)}</td>
                     <td style={s.td}><code>{r.routed_department_id ? r.routed_department_id.slice(0, 8) + '…' : '—'}</code></td>
                     <td style={s.td}><code>{r.project_id ? r.project_id.slice(0, 8) + '…' : '—'}</code></td>
                     <td style={s.td}>{new Date(r.submitted_at).toLocaleString()}</td>

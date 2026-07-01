@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getRequestTriggerStatus } from '@/lib/workflows/trigger-status'
 import { getRequestAiSummaryReadiness } from '@/lib/workflows/readiness/ai-summary'
+import { getAiDraftReviewContext } from '@/lib/ai/draft-review'
 import { EntityHeader, MetaGrid, ds } from '@/components/detail'
 import type { MetaItem } from '@/components/detail'
 import { formatDate, formatDuration, shortId } from '@/lib/ui/format'
@@ -113,6 +114,12 @@ export default async function RequestDetailPage({
 
   // AI Summary readiness (Sprint 6.5) — shared read model used by UI + API.
   const aiReadiness = await getRequestAiSummaryReadiness(supabase, req.id, context)
+
+  // AI draft review context (Sprint 6.6) — resolved only when a governed
+  // request_ai_summary run has produced a draft for this request. Read-only.
+  const aiDraft = aiReadiness?.draft_output_id || aiReadiness?.workflow_run_id
+    ? await getAiDraftReviewContext(supabase, { request_id: req.id })
+    : null
 
   // ── workflow status summary (Sprint 5.11) ──
   let workflowStatus: { label: string; color: string }
@@ -234,7 +241,7 @@ export default async function RequestDetailPage({
       </div>
 
       {/* AI Summary (Sprint 6.5) */}
-      <div style={ds.section}>
+      <div id="ai-summary" style={ds.section}>
         <h2 style={ds.h2}>AI Summary</h2>
         {!aiReadiness ? (
           <p style={{ ...ds.empty, marginBottom: 12 }}>AI summary readiness could not be loaded.</p>
@@ -277,6 +284,56 @@ export default async function RequestDetailPage({
             </div></div>
           </div>
         )}
+
+        {aiDraft?.is_ai && (
+          <div style={{ border: '1px solid #ede9fe', background: '#faf5ff', borderRadius: 6, padding: '12px 14px', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#6d28d9', marginBottom: 10 }}>AI Draft Review</div>
+            <div style={ds.grid}>
+              <div><div style={ds.label}>Draft Output</div><div style={ds.val}>
+                {aiDraft.output
+                  ? <Link href={`/outputs/${aiDraft.output.id}`} style={ds.link}>{aiDraft.output.title || shortId(aiDraft.output.id)}</Link>
+                  : aiReadiness?.draft_output_id
+                    ? <Link href={`/outputs/${aiReadiness.draft_output_id}`} style={ds.link}>{shortId(aiReadiness.draft_output_id)}</Link>
+                    : <span style={ds.empty}>hidden or not created</span>}
+              </div></div>
+              <div><div style={ds.label}>Output Status / Type</div><div style={ds.val}>
+                {aiDraft.output ? <><code>{aiDraft.output.status}</code>{aiDraft.output.output_type ? ` · ${aiDraft.output.output_type}` : ''}</> : <span style={ds.empty}>—</span>}
+              </div></div>
+              <div><div style={ds.label}>Pending Approval</div><div style={ds.val}>
+                {aiDraft.approval
+                  ? <Link href={`/approvals/${aiDraft.approval.id}`} style={ds.link}>{shortId(aiDraft.approval.id)} ({aiDraft.approval.status})</Link>
+                  : <span style={ds.empty}>none linked</span>}
+              </div></div>
+              <div><div style={ds.label}>Workflow Run</div><div style={ds.val}>
+                {aiDraft.workflow_run ? <Link href={`/workflow-runs/${aiDraft.workflow_run.id}`} style={ds.link}>{shortId(aiDraft.workflow_run.id)} ({aiDraft.workflow_run.status})</Link> : <span style={ds.empty}>—</span>}
+              </div></div>
+              <div><div style={ds.label}>AI Confidence</div><div style={ds.val}>
+                {aiDraft.confidence !== null ? aiDraft.confidence.toFixed(2) : <span style={ds.empty}>—</span>}
+              </div></div>
+              <div><div style={ds.label}>Risk Level</div><div style={ds.val}>
+                {aiDraft.risk_level ? <span style={badge(aiDraft.risk_level === 'high' ? '#dc2626' : aiDraft.risk_level === 'medium' ? '#d97706' : '#16a34a')}>{aiDraft.risk_level}</span> : <span style={ds.empty}>—</span>}
+              </div></div>
+              {aiDraft.summary && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={ds.label}>Summary Preview</div>
+                  <div style={{ ...ds.val, wordBreak: 'break-word' }}>{aiDraft.summary.length > 400 ? `${aiDraft.summary.slice(0, 400)}…` : aiDraft.summary}</div>
+                </div>
+              )}
+              {aiDraft.recommended_next_steps && aiDraft.recommended_next_steps.length > 0 && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={ds.label}>Recommended Next Steps</div>
+                  <ul style={{ ...ds.val, margin: '4px 0 0', paddingLeft: 18 }}>
+                    {aiDraft.recommended_next_steps.map((s, i) => <li key={i} style={{ wordBreak: 'break-word' }}>{s}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <p style={{ fontSize: 11, color: '#6b7280', margin: '10px 0 0' }}>
+              This draft was generated by a governed AI step. Review it before approving; approval authorizes the draft for the next step, it does not automatically trust the AI.
+            </p>
+          </div>
+        )}
+
         {aiReadiness && <RequestAiSummaryActions requestId={req.id} readiness={aiReadiness} />}
       </div>
 
