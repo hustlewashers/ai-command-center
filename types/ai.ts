@@ -136,7 +136,71 @@ export interface AiWorkflowDefinition {
   approval_required: boolean       // whether a human approval gate is opened
   readiness: AiWorkflowReadinessRequirements
   status: AiWorkflowStatus
-  template_id?: AiWorkflowTemplateId  // Sprint 7.1 — template this workflow follows
+  template_id?: AiWorkflowTemplateId   // Sprint 7.1 — template this workflow follows
+  capability_id?: AiCapabilityId       // Sprint 7.3 — capability this workflow realizes
+}
+
+// ── AI Capability Registry (Sprint 7.3) ──
+// A reusable layer BETWEEN prompts and workflows describing WHAT the AI does
+// (summarize, classify, recommend, assess risk, …) independent of any single
+// prompt or runtime workflow. Workflows reference a capability so purpose,
+// governance intent, output expectations, and evaluation metadata are declared
+// once and reused. Registry / read-model only — capabilities NEVER execute, hold
+// no privilege, register no prompt, and create no runtime workflow.
+
+export type AiCapabilityId =
+  | 'request_summarization'
+  | 'risk_assessment'
+  | 'action_recommendation'
+  | 'classification'
+
+export type AiCapabilityCategory =
+  | 'summarization'
+  | 'classification'
+  | 'recommendation'
+  | 'extraction'
+  | 'prioritization'
+  | 'risk_assessment'
+  | 'routing'
+  | 'comparison'
+
+// active  → backed by a registered, working AI workflow.
+// planned → declared intent only; no prompt or runtime workflow yet.
+// retired → kept for provenance; no longer offered.
+export type AiCapabilityStatus = 'active' | 'planned' | 'retired'
+
+// What a capability's instantiations produce (a draft awaiting approval in MVP).
+export interface AiCapabilityOutputContract {
+  type: 'output'
+  output_type: string
+  status: 'draft'
+  expected_fields: string[]   // fields downstream/reviewers can expect (documentation)
+}
+
+// Governance intent restated per capability. Declarative — the runtime + RLS
+// enforce the actual gates; this documents and cannot loosen them.
+export interface AiCapabilityGovernancePolicy {
+  approval_required: boolean
+  human_review_required: boolean
+  draft_only: boolean
+  may_mutate_governed_state: false   // always false — AI proposes, humans dispose
+}
+
+export interface AiCapabilityDefinition {
+  id: AiCapabilityId
+  name: string
+  category: AiCapabilityCategory
+  purpose: string
+  description: string
+  supported_target_entities: AiWorkflowTargetEntity[]
+  default_prompt_id: AiPromptId | null      // null → no prompt registered yet (planned)
+  default_template_id: AiWorkflowTemplateId | null
+  output_contract: AiCapabilityOutputContract
+  governance_policy: AiCapabilityGovernancePolicy
+  evaluation_signals: string[]              // signals to judge quality (e.g. confidence, approval_rate)
+  allowed_actions: string[]                 // what an instantiation MAY do (draft/propose only)
+  forbidden_actions: string[]               // what it may NEVER do
+  status: AiCapabilityStatus
 }
 
 // ── AI Workflow Template Layer (Sprint 7.1) ──

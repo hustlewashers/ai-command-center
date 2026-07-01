@@ -15,6 +15,7 @@ import {
 import { listPrompts, listPromptVersions, getActivePromptVersion } from '@/lib/ai/prompts'
 import { listAiWorkflows } from '@/lib/ai/workflows'
 import { listAiWorkflowTemplates } from '@/lib/ai/workflow-templates'
+import { listAiCapabilities } from '@/lib/ai/capabilities'
 
 // Sprint 6.2 — AI Operations. RLS-safe reads only (SSR client, never service-role).
 export default async function AiOperationsPage() {
@@ -37,6 +38,7 @@ export default async function AiOperationsPage() {
   const promptVersions = listPromptVersions()
   const aiWorkflows = listAiWorkflows()
   const aiTemplates = listAiWorkflowTemplates()
+  const aiCapabilities = listAiCapabilities()
 
   const cards = [
     { label: 'Executions', value: String(summary.executions), color: '#2563eb' },
@@ -93,6 +95,38 @@ export default async function AiOperationsPage() {
         </div>
       )}
 
+      {/* AI Capability Registry (Sprint 7.3) — what the AI does, read-only */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Capability Registry ({aiCapabilities.length} in-code)</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
+          What the AI does, independent of any single prompt or workflow. Metadata only — capabilities never
+          execute, register no prompt, and cannot bypass approvals or auto-deliver. <code>planned</code> capabilities
+          have no prompt or runtime workflow yet.
+        </p>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>Capability ID</th><th style={s.th}>Name</th><th style={s.th}>Category</th>
+            <th style={s.th}>Purpose</th><th style={s.th}>Default Prompt</th><th style={s.th}>Default Template</th>
+            <th style={s.th}>Target Entities</th><th style={s.th}>Governance</th><th style={s.th}>Status</th>
+          </tr></thead>
+          <tbody>
+            {aiCapabilities.map(c => (
+              <tr key={c.id}>
+                <td style={s.td}><code>{c.id}</code></td>
+                <td style={s.td}>{c.name}</td>
+                <td style={s.td}><code>{c.category}</code></td>
+                <td style={{ ...s.td, maxWidth: 260 }}>{c.purpose}</td>
+                <td style={s.td}>{c.default_prompt_id ? <code>{c.default_prompt_id}</code> : <span style={ds.empty}>—</span>}</td>
+                <td style={s.td}>{c.default_template_id ? <code>{c.default_template_id}</code> : <span style={ds.empty}>—</span>}</td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{c.supported_target_entities.join(', ')}</code></td>
+                <td style={s.td}>{c.governance_policy.approval_required ? 'approval + human review' : 'none'}{c.governance_policy.draft_only ? ', draft-only' : ''}</td>
+                <td style={s.td}><StatusBadge status={c.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {/* AI Workflow Templates (Sprint 7.1) — reusable blueprints, read-only */}
       <div style={ds.section}>
         <h2 style={ds.h2}>AI Workflow Templates ({aiTemplates.length} in-code)</h2>
@@ -133,18 +167,18 @@ export default async function AiOperationsPage() {
         </p>
         <table style={s.table}>
           <thead><tr>
-            <th style={s.th}>AI Workflow ID</th><th style={s.th}>Template</th><th style={s.th}>Runtime Workflow</th>
-            <th style={s.th}>Prompt</th><th style={s.th}>Required Inputs</th>
+            <th style={s.th}>AI Workflow ID</th><th style={s.th}>Capability</th><th style={s.th}>Template</th>
+            <th style={s.th}>Runtime Workflow</th><th style={s.th}>Prompt</th>
             <th style={s.th}>Approval</th><th style={s.th}>Status</th>
           </tr></thead>
           <tbody>
             {aiWorkflows.map(w => (
               <tr key={w.id}>
                 <td style={s.td}><code>{w.id}</code></td>
+                <td style={s.td}>{w.capability_id ? <code>{w.capability_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}>{w.template_id ? <code>{w.template_id}</code> : <span style={ds.empty}>—</span>}</td>
                 <td style={s.td}><code>{w.runtime_workflow_id}</code></td>
                 <td style={s.td}><code>{w.prompt_id}</code></td>
-                <td style={s.td}><code style={{ fontSize: 11 }}>{w.required_inputs.join(', ')}</code></td>
                 <td style={s.td}>{w.approval_required ? 'yes' : 'no'}</td>
                 <td style={s.td}><StatusBadge status={w.status} /></td>
               </tr>

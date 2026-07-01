@@ -39,6 +39,7 @@ const AI_WORKFLOWS: Record<AiWorkflowId, AiWorkflowDefinition> = {
     },
     status: 'active',
     template_id: 'ai_draft_output_from_entity',
+    capability_id: 'request_summarization',
   },
 }
 
