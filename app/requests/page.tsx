@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiGet, apiPost, apiPatch, ApiClientError } from '@/lib/api-client'
 import { Alert, StatusBadge } from '@/components/ui'
-import type { RequestRow, RequestRowWithWorkflow } from '@/types/requests'
+import type { RequestAiSummarySignal, RequestRow, RequestRowWithWorkflow } from '@/types/requests'
 
 const ALL_STATUSES = ['received', 'triaged', 'in_progress', 'completed', 'rejected', 'cancelled'] as const
 
@@ -20,20 +20,29 @@ type CreatedRequest = RequestRow & {
   workflow?: { triggered: boolean; deduped: boolean; reason: string } | null
 }
 
-// Small lightweight AI summary signal for the request list (Sprint 6.4).
-function aiSignal(ai: { run_id: string; status: string } | null): React.ReactNode {
+// Lightweight AI summary signal for the request list (Sprint 6.5). This is a
+// conservative batched signal, not the full request-detail readiness model.
+function aiSignal(ai: { run_id: string | null; status: string | null; signal: RequestAiSummarySignal; reason: string } | null): React.ReactNode {
   if (!ai) return <span style={{ color: '#bbb', fontSize: '0.72rem' }}>none</span>
-  let label = ai.status
-  let color = '#6b7280'
-  if (['pending', 'running', 'resuming'].includes(ai.status)) { label = 'running'; color = '#2563eb' }
-  else if (ai.status === 'completed') { label = 'draft'; color = '#16a34a' }
-  else if (ai.status === 'failed') { label = 'failed'; color = '#dc2626' }
-  else if (ai.status === 'cancelled') { label = 'cancelled'; color = '#9ca3af' }
+  const cfg: Record<RequestAiSummarySignal, { label: string; color: string }> = {
+    ready:          { label: 'ready', color: '#16a34a' },
+    needs_task:     { label: 'needs task', color: '#d97706' },
+    missing_inputs: { label: 'missing inputs', color: '#b45309' },
+    running:        { label: 'running', color: '#2563eb' },
+    draft_ready:    { label: 'draft ready', color: '#7c3aed' },
+    failed:         { label: 'failed', color: '#dc2626' },
+    none:           { label: 'none', color: '#9ca3af' },
+  }
+  const { label, color } = cfg[ai.signal] ?? cfg.none
+  const badge = (
+    <span title={ai.reason} style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: '0.66rem', fontWeight: 'bold', color: '#fff', background: color, whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+  )
+  if (!ai.run_id) return badge
   return (
     <Link href={`/workflow-runs/${ai.run_id}`} style={{ textDecoration: 'none' }}>
-      <span style={{ display: 'inline-block', padding: '1px 6px', borderRadius: 3, fontSize: '0.66rem', fontWeight: 'bold', color: '#fff', background: color, whiteSpace: 'nowrap' }}>
-        {label}
-      </span>
+      {badge}
     </Link>
   )
 }

@@ -209,7 +209,9 @@ async function recordAgentActivity(
   }
 }
 
-// runtime_metrics: tokens (int), latency (int), cost (float). XOR per row.
+// runtime_metrics: token counts (int), latency (int), cost estimate (float).
+// Schema-compatible units are intentionally narrow; metric_name carries the
+// semantic detail for tokens/USD while unit stays within the DB check constraint.
 async function recordAiMetrics(
   svc: Svc, ctx: WorkflowExecutionContext,
   provider: { usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }; latency_ms: number },
@@ -218,22 +220,24 @@ async function recordAiMetrics(
   const now = new Date()
   const ws = new Date(now.getTime() - Math.max(provider.latency_ms, 1)).toISOString()
   const we = now.toISOString()
-  const dimId = (ctx.job_id as string | undefined) ?? ctx.organization_id
+  const dimId = (ctx.workflow_run_id as string | undefined)
+    ?? (ctx.job_id as string | undefined)
+    ?? ctx.organization_id
   const base = {
     organization_id: ctx.organization_id,
     metric_category: 'agent_performance',
-    dimension_type:  'workflow_job',
+    dimension_type:  'workflow',
     dimension_id:    dimId,
     department_id:   (ctx.department_id as string | undefined) ?? null,
     window_start:    ws,
     window_end:      we,
   }
   const rows = [
-    { ...base, metric_name: 'ai_prompt_tokens',      unit: 'tokens', value_int: provider.usage.prompt_tokens,     value_float: null },
-    { ...base, metric_name: 'ai_completion_tokens',  unit: 'tokens', value_int: provider.usage.completion_tokens, value_float: null },
-    { ...base, metric_name: 'ai_total_tokens',       unit: 'tokens', value_int: provider.usage.total_tokens,      value_float: null },
+    { ...base, metric_name: 'ai_prompt_tokens',      unit: 'count', value_int: provider.usage.prompt_tokens,     value_float: null },
+    { ...base, metric_name: 'ai_completion_tokens',  unit: 'count', value_int: provider.usage.completion_tokens, value_float: null },
+    { ...base, metric_name: 'ai_total_tokens',       unit: 'count', value_int: provider.usage.total_tokens,      value_float: null },
     { ...base, metric_name: 'ai_latency_ms',         unit: 'ms',     value_int: provider.latency_ms,              value_float: null },
-    { ...base, metric_name: 'ai_estimated_cost_usd', unit: 'usd',    value_int: null,                             value_float: estimatedCost },
+    { ...base, metric_name: 'ai_estimated_cost_usd', unit: 'count', value_int: null,                             value_float: estimatedCost },
   ]
   const { error } = await svc.from('runtime_metrics').insert(rows)
   if (error) console.warn('[call_ai] runtime_metrics write failed (non-fatal):', error.message)

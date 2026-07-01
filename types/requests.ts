@@ -30,10 +30,21 @@ export interface RequestWorkflowState {
   status: string
 }
 
-// Latest request_ai_summary run state (Sprint 6.4).
+export type RequestAiSummarySignal =
+  | 'ready'
+  | 'needs_task'
+  | 'missing_inputs'
+  | 'running'
+  | 'draft_ready'
+  | 'failed'
+  | 'none'
+
+// Latest request_ai_summary state (Sprint 6.5 list signal).
 export interface RequestAiSummaryState {
-  run_id: string
-  status: string
+  run_id: string | null
+  status: string | null
+  signal: RequestAiSummarySignal
+  reason: string
 }
 
 export interface RequestRowWithWorkflow extends RequestRow {

@@ -4,32 +4,39 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiPost, ApiClientError } from '@/lib/api-client'
+import type { RequestAiSummaryReadiness } from '@/lib/workflows/readiness/ai-summary'
 
 type TriggerResult = {
-  triggered: boolean; deduped: boolean
-  workflow_id: string | null; background_job_id: string | null; workflow_run_id: string | null
+  triggered: boolean
+  deduped: boolean
+  workflow_id: string | null
+  background_job_id: string | null
+  workflow_run_id: string | null
   reason: string
+  readiness: RequestAiSummaryReadiness
 }
 type Feedback = { kind: 'ok'; result: TriggerResult } | { kind: 'err'; message: string }
 
-// Sprint 6.4 — "Summarize with AI" action. Reuses POST /api/requests/:id/summarize,
-// which enqueues the existing request_ai_summary workflow (worker executes it).
+function buttonLabel(readiness: RequestAiSummaryReadiness): string {
+  if (readiness.can_trigger) return 'Summarize with AI'
+  if (readiness.status === 'active') return 'AI summary already running'
+  if (readiness.status === 'failed') return 'Recover AI summary'
+  if (readiness.status === 'completed') return 'AI summary already exists'
+  return 'AI summary not ready'
+}
+
+// Sprint 6.5 - "Summarize with AI" action. The readiness object is computed
+// server-side and shared with the API so the button cannot start known-doomed runs.
 export default function RequestAiSummaryActions({
   requestId,
-  allowed,
-  hasActiveAiSummary,
+  readiness,
 }: {
   requestId: string
-  allowed: boolean
-  hasActiveAiSummary: boolean
+  readiness: RequestAiSummaryReadiness
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
-
-  if (!allowed) {
-    return <div style={s.note}>Your role cannot start an AI summary.</div>
-  }
 
   async function summarize() {
     setBusy(true)
@@ -48,18 +55,21 @@ export default function RequestAiSummaryActions({
 
   return (
     <div>
-      <button type="button" onClick={summarize} disabled={busy || hasActiveAiSummary}
-        style={{ ...s.btn, opacity: busy || hasActiveAiSummary ? 0.5 : 1 }}>
-        {busy ? 'Starting…' : 'Summarize with AI'}
+      <button type="button" onClick={summarize} disabled={busy || !readiness.can_trigger}
+        style={{ ...s.btn, opacity: busy || !readiness.can_trigger ? 0.5 : 1 }}>
+        {busy ? 'Starting...' : buttonLabel(readiness)}
       </button>
-      {hasActiveAiSummary && <span style={s.inline}>AI summary already running.</span>}
+      <span style={s.inline}>{readiness.reason}</span>
+      {readiness.recovery_run_id && (
+        <Link href={`/workflow-runs/${readiness.recovery_run_id}`} style={s.actionLink}>recovery</Link>
+      )}
 
       {feedback?.kind === 'err' && <div style={s.err}>{feedback.message}</div>}
       {feedback?.kind === 'ok' && (
-        <div style={feedback.result.deduped ? s.info : s.ok}>
+        <div style={feedback.result.deduped || !feedback.result.triggered ? s.info : s.ok}>
           <span>
             {feedback.result.triggered ? 'AI summary enqueued.'
-              : feedback.result.deduped ? 'AI summary already running — reused it.'
+              : feedback.result.deduped ? 'AI summary already running; reused it.'
               : `Not started: ${feedback.result.reason}`}
           </span>
           {feedback.result.workflow_run_id && (
@@ -68,6 +78,15 @@ export default function RequestAiSummaryActions({
           {!feedback.result.workflow_run_id && feedback.result.background_job_id && (
             <Link href="/background-jobs" style={s.link}>view job</Link>
           )}
+          {feedback.result.readiness.recovery_run_id && (
+            <Link href={`/workflow-runs/${feedback.result.readiness.recovery_run_id}`} style={s.link}>recover</Link>
+          )}
+          {feedback.result.readiness.draft_output_id && (
+            <Link href={`/outputs/${feedback.result.readiness.draft_output_id}`} style={s.link}>draft</Link>
+          )}
+          {feedback.result.readiness.approval_id && (
+            <Link href={`/approvals/${feedback.result.readiness.approval_id}`} style={s.link}>approval</Link>
+          )}
         </div>
       )}
     </div>
@@ -75,9 +94,9 @@ export default function RequestAiSummaryActions({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  note:   { fontSize: 13, color: '#6b7280' },
   btn:    { background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 4, padding: '6px 14px', fontSize: 13, fontWeight: 700, fontFamily: 'monospace', cursor: 'pointer' },
   inline: { marginLeft: 10, fontSize: 12, color: '#6b7280' },
+  actionLink: { marginLeft: 10, fontSize: 12, color: '#2563eb', textDecoration: 'none', fontWeight: 700 },
   err:    { marginTop: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#dc2626' },
   ok:     { marginTop: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#15803d', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' },
   info:   { marginTop: 10, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '8px 12px', fontSize: 12, color: '#1d4ed8', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' },

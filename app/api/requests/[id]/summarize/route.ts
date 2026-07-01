@@ -2,8 +2,29 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveUserContext } from '@/lib/auth/context'
 import { errorResponse, ok, createError } from '@/lib/errors'
 import { triggerRequestAiSummary } from '@/lib/workflows/triggers'
+import {
+  REQUEST_AI_SUMMARY_WORKFLOW_ID,
+  getRequestAiSummaryReadiness,
+  type RequestAiSummaryReadiness,
+} from '@/lib/workflows/readiness/ai-summary'
 
 type RouteParams = { params: Promise<{ id: string }> }
+
+type AiSummaryTriggerResponse = {
+  triggered: boolean
+  deduped: boolean
+  workflow_id: typeof REQUEST_AI_SUMMARY_WORKFLOW_ID
+  background_job_id: string | null
+  workflow_run_id: string | null
+  reason: string
+  readiness: RequestAiSummaryReadiness
+}
+
+function response(
+  fields: Omit<AiSummaryTriggerResponse, 'workflow_id'>,
+): AiSummaryTriggerResponse {
+  return { workflow_id: REQUEST_AI_SUMMARY_WORKFLOW_ID, ...fields }
+}
 
 // POST /api/requests/:id/summarize  (Sprint 6.4)
 // Manually starts the request_ai_summary workflow for a request.
@@ -44,8 +65,51 @@ export async function POST(_request: Request, { params }: RouteParams) {
       throw createError('forbidden', 'Your role cannot start an AI summary for this request')
     }
 
+    const readiness = await getRequestAiSummaryReadiness(supabase, id, ctx)
+    if (!readiness) throw createError('not_found', 'Request not found')
+
+    if (!readiness.can_trigger) {
+      return ok(response({
+        triggered: false,
+        deduped: readiness.status === 'active',
+        background_job_id: readiness.background_job_id,
+        workflow_run_id: readiness.workflow_run_id,
+        reason: readiness.reason,
+        readiness,
+      }))
+    }
+
     const result = await triggerRequestAiSummary(id, ctx)
-    return ok(result)
+    const postTriggerReadiness =
+      (await getRequestAiSummaryReadiness(supabase, id, ctx)) ?? readiness
+
+    const readinessAfterTrigger: RequestAiSummaryReadiness =
+      result.triggered || result.deduped
+        ? {
+            ...postTriggerReadiness,
+            status: 'active',
+            can_trigger: false,
+            reason: result.reason,
+            blockers: [result.workflow_run_id ? 'active_run_exists' : 'active_job_exists'],
+            background_job_id: result.background_job_id,
+            workflow_run_id: result.workflow_run_id,
+            recommended_action: 'wait_for_ai_summary',
+          }
+        : {
+            ...postTriggerReadiness,
+            status: 'blocked',
+            can_trigger: false,
+            reason: result.reason,
+          }
+
+    return ok(response({
+      triggered: result.triggered,
+      deduped: result.deduped,
+      background_job_id: result.background_job_id,
+      workflow_run_id: result.workflow_run_id,
+      reason: result.reason,
+      readiness: readinessAfterTrigger,
+    }))
   } catch (err) {
     return errorResponse(err)
   }

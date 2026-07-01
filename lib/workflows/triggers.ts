@@ -6,6 +6,10 @@ import {
   findWorkflowsByTrigger,
 } from './registry'
 import { createError } from '@/lib/errors'
+import {
+  REQUEST_AI_SUMMARY_WORKFLOW_ID,
+  type AiSummaryRecommendedAction,
+} from '@/lib/workflows/readiness/ai-summary'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { UserContext } from '@/types/api'
 import type { WorkflowTriggerEntityType } from '@/types/workflows'
@@ -42,6 +46,17 @@ export interface WorkflowTriggerResult {
 
 function notTriggered(reason: string): WorkflowTriggerResult {
   return { triggered: false, deduped: false, workflow_id: null, background_job_id: null, workflow_run_id: null, reason }
+}
+
+function aiSummaryNotTriggered(reason: string): WorkflowTriggerResult {
+  return {
+    triggered: false,
+    deduped: false,
+    workflow_id: REQUEST_AI_SUMMARY_WORKFLOW_ID,
+    background_job_id: null,
+    workflow_run_id: null,
+    reason,
+  }
 }
 
 // ── Duplicate protection ─────────────────────────────────────
@@ -283,10 +298,10 @@ export async function triggerRequestAiSummary(
   }
 
   const svc = getServiceClient()
-  const workflowId = 'request_ai_summary'
+  const workflowId = REQUEST_AI_SUMMARY_WORKFLOW_ID
 
   const workflow = getWorkflow(workflowId)
-  if (!workflow) return notTriggered(`No workflow '${workflowId}' registered`)
+  if (!workflow) return aiSummaryNotTriggered(`No workflow '${workflowId}' registered`)
 
   const { data: req, error: reqErr } = await svc
     .from('requests')
@@ -309,13 +324,13 @@ export async function triggerRequestAiSummary(
   const departmentId = r.routed_department_id ?? ctx.departmentId
   const projectId    = r.project_id
   if (!departmentId) {
-    const result = notTriggered('Request has no department; request_ai_summary not triggered')
-    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result)
+    const result = aiSummaryNotTriggered('Request has no department; request_ai_summary not triggered')
+    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result, ['department_id'], 'fill_missing_inputs')
     return result
   }
   if (!projectId) {
-    const result = notTriggered('Request has no project; request_ai_summary not triggered')
-    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result)
+    const result = aiSummaryNotTriggered('Request has no project; request_ai_summary not triggered')
+    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result, ['project_id'], 'fill_missing_inputs')
     return result
   }
 
@@ -326,13 +341,19 @@ export async function triggerRequestAiSummary(
     return existing
   }
 
-  // Best-effort: a task linked to this request lets create_output attach the
-  // draft (outputs.task_id is NOT NULL). Without one the run fails at
-  // create_output and is recoverable via the existing recovery engine.
-  const { data: task } = await svc.from('tasks').select('id')
+  // Required: request_ai_summary creates a draft output, and outputs.task_id is
+  // NOT NULL. Without a linked task the run is known-doomed, so block before
+  // enqueue and point the operator back to request_to_task.
+  const { data: task, error: taskErr } = await svc.from('tasks').select('id')
     .eq('request_id', r.id).is('deleted_at', null)
     .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (taskErr) throw createError('internal', `ai summary: linked task fetch failed: ${taskErr.message}`)
   const taskId = (task as { id: string } | null)?.id ?? null
+  if (!taskId) {
+    const result = aiSummaryNotTriggered('Request has no linked task; request_ai_summary not triggered')
+    await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result, ['task_id'], 'run_request_to_task_first')
+    return result
+  }
 
   const inputs = {
     organization_id:     r.organization_id,
@@ -359,7 +380,7 @@ export async function triggerRequestAiSummary(
   const result: WorkflowTriggerResult = {
     triggered: true, deduped: false, workflow_id: workflowId,
     background_job_id: jobId, workflow_run_id: null,
-    reason: taskId ? 'AI summary workflow enqueued' : 'AI summary enqueued (no linked task — draft creation may need recovery)',
+    reason: 'AI summary workflow enqueued',
   }
   await logAiSummaryTrigger(svc, ctx, r.organization_id, r.id, result)
   return result
@@ -369,6 +390,8 @@ export async function triggerRequestAiSummary(
 async function logAiSummaryTrigger(
   svc: SupabaseClient, ctx: UserContext, organizationId: string,
   requestId: string, result: WorkflowTriggerResult,
+  missing: string[] = [],
+  recommendedAction: AiSummaryRecommendedAction | null = null,
 ): Promise<void> {
   const outcome = triggerOutcome(result)
   const { error } = await svc.from('execution_logs').insert({
@@ -380,11 +403,14 @@ async function logAiSummaryTrigger(
     context_id:      requestId,
     metadata: {
       trigger_type:    'manual_ai_summary',
-      workflow_id:     'request_ai_summary',
+      workflow_id:     REQUEST_AI_SUMMARY_WORKFLOW_ID,
+      trigger_result:  outcome,
       request_id:      requestId,
       triggered:       result.triggered,
       deduped:         result.deduped,
       reason:          result.reason,
+      missing,
+      recommended_action: recommendedAction,
       actor_user_id:   ctx.userId,
       background_job_id: result.background_job_id,
       workflow_run_id: result.workflow_run_id,

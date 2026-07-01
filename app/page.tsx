@@ -188,6 +188,7 @@ export default async function DashboardPage({
     activeReqsResult,
     reqRunIdsResult,
     wfCancelledResult,
+    reqTaskIdsResult,
   ] = await Promise.all([
     supabase.from('requests')
       .select('id, intent, status, submitted_at', { count: 'exact' })
@@ -265,15 +266,21 @@ export default async function DashboardPage({
 
     // Missing-trigger detection (Sprint 5.9): active requests + the set of
     // request ids that already have a workflow run.
-    supabase.from('requests').select('id')
+    supabase.from('requests').select('id, project_id, routed_department_id')
       .in('status', ['received', 'triaged', 'in_progress'])
       .order('created_at', { ascending: false }).limit(200),
-    supabase.from('workflow_runs').select('trigger_entity_id, status, created_at')
+    supabase.from('workflow_runs').select('workflow_id, trigger_entity_id, status, created_at')
       .eq('trigger_entity_type', 'request')
       .order('created_at', { ascending: false }).limit(2000),
 
     // Recoverable workflows (Sprint 5.11): cancelled count (failed already above).
     supabase.from('workflow_runs').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
+
+    // AI readiness alert (Sprint 6.5): recent active requests with linked tasks.
+    supabase.from('tasks').select('request_id')
+      .not('request_id', 'is', null)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false }).limit(1000),
   ])
 
   // Extract with safe fallbacks
@@ -309,16 +316,29 @@ export default async function DashboardPage({
   // Requests needing workflow review (Sprint 5.10): active requests with no
   // workflow run, OR whose latest run failed/cancelled. Runs come newest-first,
   // so the first status seen per request id is its latest.
-  const activeReqIds = (activeReqsResult.data ?? []) as { id: string }[]
+  const activeReqIds = (activeReqsResult.data ?? []) as { id: string; project_id: string | null; routed_department_id: string | null }[]
   const latestRunStatusByReq: Record<string, string> = {}
-  for (const run of (reqRunIdsResult.data ?? []) as { trigger_entity_id: string | null; status: string }[]) {
-    if (!run.trigger_entity_id || latestRunStatusByReq[run.trigger_entity_id]) continue
+  const activeAiReqIds = new Set<string>()
+  for (const run of (reqRunIdsResult.data ?? []) as { workflow_id: string; trigger_entity_id: string | null; status: string }[]) {
+    if (!run.trigger_entity_id) continue
+    if (run.workflow_id === 'request_ai_summary' && ['pending', 'running', 'resuming'].includes(run.status)) {
+      activeAiReqIds.add(run.trigger_entity_id)
+    }
+    if (latestRunStatusByReq[run.trigger_entity_id]) continue
     latestRunStatusByReq[run.trigger_entity_id] = run.status
   }
   const missingTriggerCount = activeReqIds.filter(r => {
     const st = latestRunStatusByReq[r.id]
     return st === undefined || st === 'failed' || st === 'cancelled'
   }).length
+
+  const requestIdsWithTasks = new Set((reqTaskIdsResult.data ?? [])
+    .map(t => (t as { request_id: string | null }).request_id)
+    .filter((v): v is string => typeof v === 'string'))
+  const aiNotReadyCount = activeReqIds.filter(r =>
+    !activeAiReqIds.has(r.id)
+    && (!r.project_id || !r.routed_department_id || !requestIdsWithTasks.has(r.id))
+  ).length
 
   // AI Operations summary (Sprint 6.2) — lightweight single read.
   const aiSummary = await getAiMetricSummary(supabase)
@@ -375,6 +395,14 @@ export default async function DashboardPage({
       kind: 'missing',
       text: `${aiNeedsReview} AI summar${aiNeedsReview !== 1 ? 'ies' : 'y'} needing review (draft awaiting approval, or failed)`,
       href: '/ai-operations',
+    })
+  }
+  if (aiNotReadyCount > 0) {
+    alerts.push({
+      key: 'ai-not-ready',
+      kind: 'missing',
+      text: `${aiNotReadyCount} recent request${aiNotReadyCount !== 1 ? 's' : ''} not ready for AI summary (missing inputs or linked task)`,
+      href: '/requests',
     })
   }
 

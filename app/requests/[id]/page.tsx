@@ -3,6 +3,7 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getRequestTriggerStatus } from '@/lib/workflows/trigger-status'
+import { getRequestAiSummaryReadiness } from '@/lib/workflows/readiness/ai-summary'
 import { EntityHeader, MetaGrid, ds } from '@/components/detail'
 import type { MetaItem } from '@/components/detail'
 import { formatDate, formatDuration, shortId } from '@/lib/ui/format'
@@ -110,25 +111,8 @@ export default async function RequestDetailPage({
   })
   const roleAllowed = TRIGGER_ROLES.has(context.role)
 
-  // ── AI Summary (Sprint 6.4) — latest request_ai_summary run for this request ──
-  const { data: aiRunData } = await supabase.from('workflow_runs')
-    .select('id, status, accumulated, started_at, completed_at, failed_at, current_step_id, error_message')
-    .eq('trigger_entity_type', 'request').eq('trigger_entity_id', id)
-    .eq('workflow_id', 'request_ai_summary')
-    .order('created_at', { ascending: false }).limit(1).maybeSingle()
-  const aiRun = (aiRunData ?? null) as {
-    id: string; status: string; accumulated: Record<string, unknown> | null
-    started_at: string | null; completed_at: string | null; failed_at: string | null
-    current_step_id: string | null; error_message: string | null
-  } | null
-  const aiAcc = (aiRun?.accumulated ?? {}) as Record<string, unknown>
-  const aiResult = (aiAcc.ai_result ?? null) as Record<string, unknown> | null
-  const aiOutputId = typeof aiAcc.output_id === 'string' ? aiAcc.output_id : null
-  const aiApprovalId = typeof aiAcc.approval_id === 'string' ? aiAcc.approval_id : null
-  const aiActive = aiRun !== null && ['pending', 'running', 'resuming'].includes(aiRun.status)
-  // Who may start an AI summary: admins/leads, or a department_member who owns the request.
-  const aiActionAllowed = roleAllowed ||
-    (context.role === 'department_member' && req.submitted_by_user_id === context.userId)
+  // AI Summary readiness (Sprint 6.5) — shared read model used by UI + API.
+  const aiReadiness = await getRequestAiSummaryReadiness(supabase, req.id, context)
 
   // ── workflow status summary (Sprint 5.11) ──
   let workflowStatus: { label: string; color: string }
@@ -249,42 +233,51 @@ export default async function RequestDetailPage({
         </div>
       </div>
 
-      {/* AI Summary (Sprint 6.4) */}
+      {/* AI Summary (Sprint 6.5) */}
       <div style={ds.section}>
         <h2 style={ds.h2}>AI Summary</h2>
-        {!aiRun ? (
-          <p style={{ ...ds.empty, marginBottom: 12 }}>No AI summary has run for this request yet.</p>
+        {!aiReadiness ? (
+          <p style={{ ...ds.empty, marginBottom: 12 }}>AI summary readiness could not be loaded.</p>
         ) : (
           <div style={{ ...ds.grid, marginBottom: 12 }}>
-            <div><div style={ds.label}>Status</div><div style={ds.val}>
-              <span style={badge(RUN_STATUS_COLOR[aiRun.status as WorkflowRunStatus] ?? '#6b7280')}>{aiRun.status}</span>
+            <div><div style={ds.label}>Readiness</div><div style={ds.val}>
+              <span style={badge(aiReadiness.status === 'ready' ? '#16a34a'
+                : aiReadiness.status === 'active' ? '#2563eb'
+                : aiReadiness.status === 'failed' ? '#dc2626'
+                : aiReadiness.status === 'completed' ? '#7c3aed'
+                : '#d97706')}>{aiReadiness.status}</span>
+            </div></div>
+            <div><div style={ds.label}>Recommended Action</div><div style={ds.val}>
+              <code>{aiReadiness.recommended_action}</code>
+            </div></div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <div style={ds.label}>Reason</div>
+              <div style={{ ...ds.val, wordBreak: 'break-word' }}>{aiReadiness.reason}</div>
+            </div>
+            <div><div style={ds.label}>Blockers</div><div style={ds.val}>
+              {aiReadiness.blockers.length > 0 ? <code>{aiReadiness.blockers.join(', ')}</code> : <span style={ds.empty}>none</span>}
+            </div></div>
+            <div><div style={ds.label}>Warnings</div><div style={ds.val}>
+              {aiReadiness.warnings.length > 0 ? aiReadiness.warnings.join(' ') : <span style={ds.empty}>none</span>}
             </div></div>
             <div><div style={ds.label}>AI Run</div><div style={ds.val}>
-              <Link href={`/workflow-runs/${aiRun.id}`} style={ds.link}>{shortId(aiRun.id)}</Link>
+              {aiReadiness.workflow_run_id ? <Link href={`/workflow-runs/${aiReadiness.workflow_run_id}`} style={ds.link}>{shortId(aiReadiness.workflow_run_id)}</Link> : <span style={ds.empty}>—</span>}
+            </div></div>
+            <div><div style={ds.label}>Queued Job</div><div style={ds.val}>
+              {aiReadiness.background_job_id ? <Link href="/background-jobs" style={ds.link}>{shortId(aiReadiness.background_job_id)}</Link> : <span style={ds.empty}>—</span>}
+            </div></div>
+            <div><div style={ds.label}>Recovery</div><div style={ds.val}>
+              {aiReadiness.recovery_run_id ? <Link href={`/workflow-runs/${aiReadiness.recovery_run_id}`} style={ds.link}>{shortId(aiReadiness.recovery_run_id)}</Link> : <span style={ds.empty}>—</span>}
             </div></div>
             <div><div style={ds.label}>Draft Output</div><div style={ds.val}>
-              {aiOutputId ? <Link href={`/outputs/${aiOutputId}`} style={ds.link}>{shortId(aiOutputId)}</Link> : <span style={ds.empty}>—</span>}
+              {aiReadiness.draft_output_id ? <Link href={`/outputs/${aiReadiness.draft_output_id}`} style={ds.link}>{shortId(aiReadiness.draft_output_id)}</Link> : <span style={ds.empty}>—</span>}
             </div></div>
             <div><div style={ds.label}>Pending Approval</div><div style={ds.val}>
-              {aiApprovalId ? <Link href={`/approvals/${aiApprovalId}`} style={ds.link}>{shortId(aiApprovalId)}</Link> : <span style={ds.empty}>—</span>}
+              {aiReadiness.approval_id ? <Link href={`/approvals/${aiReadiness.approval_id}`} style={ds.link}>{shortId(aiReadiness.approval_id)}</Link> : <span style={ds.empty}>—</span>}
             </div></div>
-            <div><div style={ds.label}>Started</div><div style={ds.val}>{formatDate(aiRun.started_at)}</div></div>
-            <div><div style={ds.label}>Ended</div><div style={ds.val}>{formatDate(aiRun.completed_at ?? aiRun.failed_at)}</div></div>
-            {typeof aiResult?.summary === 'string' && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={ds.label}>AI Result Summary</div>
-                <div style={{ ...ds.val, wordBreak: 'break-word' }}>{(aiResult.summary as string).slice(0, 600)}</div>
-              </div>
-            )}
-            {aiRun.status === 'failed' && aiRun.error_message && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={ds.label}>Error</div>
-                <div style={{ ...ds.val, color: '#dc2626', wordBreak: 'break-word' }}>{aiRun.error_message}</div>
-              </div>
-            )}
           </div>
         )}
-        <RequestAiSummaryActions requestId={req.id} allowed={aiActionAllowed} hasActiveAiSummary={aiActive} />
+        {aiReadiness && <RequestAiSummaryActions requestId={req.id} readiness={aiReadiness} />}
       </div>
 
       {/* Recovery History (Sprint 5.11) — workflow_runs lineage, newest first.

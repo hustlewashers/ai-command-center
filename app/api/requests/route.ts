@@ -3,6 +3,7 @@ import { resolveUserContext } from '@/lib/auth/context'
 import { errorResponse, ok, createError } from '@/lib/errors'
 import { validateCreateBody } from '@/lib/requests/validate'
 import { triggerRequestWorkflow } from '@/lib/workflows/triggers'
+import { REQUEST_AI_SUMMARY_WORKFLOW_ID } from '@/lib/workflows/readiness/ai-summary'
 
 const SELECT_COLS = 'id, organization_id, source, intent, status, submitted_at, submitted_by_user_id, routed_department_id, project_id, metadata, created_at, updated_at'
 
@@ -25,33 +26,76 @@ export async function GET() {
       .limit(100)
 
     if (error) throw new Error(error.message)
-    const requests = (data ?? []) as { id: string }[]
+    const requests = (data ?? []) as {
+      id: string
+      project_id: string | null
+      routed_department_id: string | null
+    }[]
 
     // Batch: latest run per request (newest first → first seen per id wins).
     // From the same fetch we also derive the latest request_ai_summary run per
     // request (Sprint 6.4) — no extra query.
     let workflowByRequest: Record<string, { run_id: string; workflow_id: string; status: string }> = {}
-    let aiByRequest: Record<string, { run_id: string; status: string }> = {}
+    let aiByRequest: Record<string, { run_id: string | null; status: string | null; signal: string; reason: string }> = {}
     if (requests.length > 0) {
-      const { data: runs } = await supabase
-        .from('workflow_runs')
-        .select('id, workflow_id, status, trigger_entity_id, created_at')
-        .eq('trigger_entity_type', 'request')
-        .in('trigger_entity_id', requests.map(r => r.id))
-        .order('created_at', { ascending: false })
+      const ids = requests.map(r => r.id)
+      const [runsRes, tasksRes, aiJobsRes] = await Promise.all([
+        supabase
+          .from('workflow_runs')
+          .select('id, workflow_id, status, trigger_entity_id, created_at')
+          .eq('trigger_entity_type', 'request')
+          .in('trigger_entity_id', ids)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('tasks')
+          .select('request_id')
+          .in('request_id', ids)
+          .is('deleted_at', null),
+        supabase
+          .from('background_jobs')
+          .select('id, status, related_request_id')
+          .eq('job_type', 'workflow_step')
+          .in('status', ['queued', 'processing', 'retrying'])
+          .in('related_request_id', ids)
+          .filter('payload->>workflow_id', 'eq', REQUEST_AI_SUMMARY_WORKFLOW_ID),
+      ])
 
       const seen = new Set<string>()
       const seenAi = new Set<string>()
       const map: typeof workflowByRequest = {}
-      const aiMap: typeof aiByRequest = {}
-      for (const run of (runs ?? []) as { id: string; workflow_id: string; status: string; trigger_entity_id: string }[]) {
+      const latestAi: Record<string, { run_id: string; status: string }> = {}
+      for (const run of (runsRes.data ?? []) as { id: string; workflow_id: string; status: string; trigger_entity_id: string }[]) {
         if (!seen.has(run.trigger_entity_id)) {
           seen.add(run.trigger_entity_id)
           map[run.trigger_entity_id] = { run_id: run.id, workflow_id: run.workflow_id, status: run.status }
         }
-        if (run.workflow_id === 'request_ai_summary' && !seenAi.has(run.trigger_entity_id)) {
+        if (run.workflow_id === REQUEST_AI_SUMMARY_WORKFLOW_ID && !seenAi.has(run.trigger_entity_id)) {
           seenAi.add(run.trigger_entity_id)
-          aiMap[run.trigger_entity_id] = { run_id: run.id, status: run.status }
+          latestAi[run.trigger_entity_id] = { run_id: run.id, status: run.status }
+        }
+      }
+      const taskReqIds = new Set((tasksRes.data ?? [])
+        .map(t => (t as { request_id: string | null }).request_id)
+        .filter((v): v is string => typeof v === 'string'))
+      const activeAiJobReqIds = new Set((aiJobsRes.data ?? [])
+        .map(j => (j as { related_request_id: string | null }).related_request_id)
+        .filter((v): v is string => typeof v === 'string'))
+
+      const aiMap: typeof aiByRequest = {}
+      for (const req of requests) {
+        const ai = latestAi[req.id] ?? null
+        if (activeAiJobReqIds.has(req.id) || (ai && ['pending', 'running', 'resuming'].includes(ai.status))) {
+          aiMap[req.id] = { run_id: ai?.run_id ?? null, status: ai?.status ?? 'queued', signal: 'running', reason: 'AI summary is running or queued' }
+        } else if (ai?.status === 'completed') {
+          aiMap[req.id] = { run_id: ai.run_id, status: ai.status, signal: 'draft_ready', reason: 'AI summary draft exists' }
+        } else if (ai?.status === 'failed') {
+          aiMap[req.id] = { run_id: ai.run_id, status: ai.status, signal: 'failed', reason: 'AI summary failed' }
+        } else if (!req.project_id || !req.routed_department_id) {
+          aiMap[req.id] = { run_id: ai?.run_id ?? null, status: ai?.status ?? null, signal: 'missing_inputs', reason: 'Missing project or department' }
+        } else if (!taskReqIds.has(req.id)) {
+          aiMap[req.id] = { run_id: ai?.run_id ?? null, status: ai?.status ?? null, signal: 'needs_task', reason: 'Needs linked task' }
+        } else {
+          aiMap[req.id] = { run_id: ai?.run_id ?? null, status: ai?.status ?? null, signal: 'ready', reason: 'Ready for AI summary' }
         }
       }
       workflowByRequest = map
