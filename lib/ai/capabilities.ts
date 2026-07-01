@@ -66,6 +66,7 @@ const AI_CAPABILITIES: Record<AiCapabilityId, AiCapabilityDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'active',
+    default_skill_id: 'summarize_request',
   },
 
   // 2) Planned — no prompt, no runtime workflow yet.
@@ -89,6 +90,7 @@ const AI_CAPABILITIES: Record<AiCapabilityId, AiCapabilityDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    default_skill_id: 'assess_entity_risk',
   },
 
   // 3) Planned — no prompt, no runtime workflow yet.
@@ -112,6 +114,7 @@ const AI_CAPABILITIES: Record<AiCapabilityId, AiCapabilityDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    default_skill_id: 'recommend_next_action',
   },
 
   // 4) Planned — no prompt, no runtime workflow yet.
@@ -135,6 +138,7 @@ const AI_CAPABILITIES: Record<AiCapabilityId, AiCapabilityDefinition> = {
     allowed_actions: DRAFT_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    default_skill_id: 'classify_entity',
   },
 }
 

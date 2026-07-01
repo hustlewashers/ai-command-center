@@ -201,6 +201,81 @@ export interface AiCapabilityDefinition {
   allowed_actions: string[]                 // what an instantiation MAY do (draft/propose only)
   forbidden_actions: string[]               // what it may NEVER do
   status: AiCapabilityStatus
+  default_skill_id?: AiSkillId              // Sprint 7.4 — skill this capability composes
+}
+
+// ── AI Skill Registry (Sprint 7.4) ──
+// The most granular reusable layer: a SKILL is a single reusable AI operation
+// (summarize, classify, extract, recommend, …) that capabilities compose and
+// future agents will orchestrate. Where a capability names WHAT the AI does for a
+// business purpose, a skill names the underlying OPERATION independent of purpose.
+// Registry / read-model only — skills NEVER execute, hold no privilege, register
+// no prompt, and create no runtime workflow.
+
+export type AiSkillId =
+  | 'summarize_request'
+  | 'classify_entity'
+  | 'assess_entity_risk'
+  | 'recommend_next_action'
+  | 'extract_entity_facts'
+
+export type AiSkillCategory =
+  | 'summarize'
+  | 'classify'
+  | 'extract'
+  | 'recommend'
+  | 'compare'
+  | 'prioritize'
+  | 'assess_risk'
+  | 'route'
+
+// active  → composed by an active capability with a registered prompt/workflow.
+// planned → declared operation only; no prompt or runtime workflow yet.
+// retired → kept for provenance; no longer offered.
+export type AiSkillStatus = 'active' | 'planned' | 'retired'
+
+// A declared input on a skill (name + whether the model may see it).
+export interface AiSkillInput {
+  key: string
+  description: string
+  sensitive?: boolean   // true → must NOT be whitelisted into a prompt
+}
+
+// What a skill's invocations produce (a draft awaiting approval in MVP).
+export interface AiSkillOutputContract {
+  type: 'output'
+  output_type: string
+  status: 'draft'
+  expected_fields: string[]
+}
+
+// Governance intent restated per skill. Declarative — the runtime + RLS enforce
+// the actual gates; this documents and cannot loosen them.
+export interface AiSkillGovernancePolicy {
+  approval_required: boolean
+  human_review_required: boolean
+  draft_only: boolean
+  may_mutate_governed_state: false   // always false — AI proposes, humans dispose
+}
+
+export interface AiSkillDefinition {
+  id: AiSkillId
+  name: string
+  category: AiSkillCategory
+  purpose: string
+  description: string
+  supported_input_entities: AiWorkflowTargetEntity[]
+  supported_output_types: string[]
+  default_capability_id: AiCapabilityId | null   // capability this skill serves (null if generic)
+  default_prompt_id: AiPromptId | null           // null → no prompt registered yet (planned)
+  required_inputs: AiSkillInput[]
+  optional_inputs: AiSkillInput[]
+  output_contract: AiSkillOutputContract
+  governance_policy: AiSkillGovernancePolicy
+  evaluation_signals: string[]
+  allowed_actions: string[]
+  forbidden_actions: string[]
+  status: AiSkillStatus
 }
 
 // ── AI Workflow Template Layer (Sprint 7.1) ──
