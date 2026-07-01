@@ -12,7 +12,7 @@ import {
   getRecentAiDraftOutputs,
   getRecentAiErrors,
 } from '@/lib/ai/metrics'
-import { listPrompts } from '@/lib/ai/prompts'
+import { listPrompts, listPromptVersions, getActivePromptVersion } from '@/lib/ai/prompts'
 import { listAiWorkflows } from '@/lib/ai/workflows'
 import { listAiWorkflowTemplates } from '@/lib/ai/workflow-templates'
 
@@ -34,6 +34,7 @@ export default async function AiOperationsPage() {
     getRecentAiErrors(supabase, 10),
   ])
   const prompts = listPrompts()
+  const promptVersions = listPromptVersions()
   const aiWorkflows = listAiWorkflows()
   const aiTemplates = listAiWorkflowTemplates()
 
@@ -152,23 +153,59 @@ export default async function AiOperationsPage() {
         </table>
       </div>
 
-      {/* Prompt registry (TASK 6) — in-code, read-only */}
+      {/* Prompt registry (Sprint 7.2) — in-code, versioned, read-only. One row
+          per prompt id showing its ACTIVE version. */}
       <div style={ds.section}>
         <h2 style={ds.h2}>Prompt Registry ({prompts.length} in-code)</h2>
         <table style={s.table}>
           <thead><tr>
-            <th style={s.th}>Prompt ID</th><th style={s.th}>Version</th><th style={s.th}>Model</th>
-            <th style={s.th}>Low</th><th style={s.th}>Purpose</th><th style={s.th}>Schema Fields</th>
+            <th style={s.th}>Prompt ID</th><th style={s.th}>Active Version</th><th style={s.th}>Model</th>
+            <th style={s.th}>Low</th><th style={s.th}>Purpose</th><th style={s.th}>Schema Fields</th><th style={s.th}>Status</th>
           </tr></thead>
           <tbody>
-            {prompts.map(p => (
-              <tr key={p.id}>
-                <td style={s.td}><code>{p.id}</code></td>
-                <td style={s.td}>v{p.version}</td>
-                <td style={s.td}><code>{p.model}</code></td>
-                <td style={s.td}>{p.low ? 'yes' : 'no'}</td>
-                <td style={{ ...s.td, maxWidth: 320 }}>{p.purpose}</td>
-                <td style={s.td}><code style={{ fontSize: 11 }}>{Object.keys(p.output_schema).join(', ')}</code></td>
+            {prompts.map(entry => {
+              const active = getActivePromptVersion(entry.id)
+              return (
+                <tr key={entry.id}>
+                  <td style={s.td}><code>{entry.id}</code></td>
+                  <td style={s.td}><code>{active?.version_id ?? `v${entry.active_version}`}</code></td>
+                  <td style={s.td}><code>{active?.model ?? '—'}</code></td>
+                  <td style={s.td}>{active ? (active.low ? 'yes' : 'no') : '—'}</td>
+                  <td style={{ ...s.td, maxWidth: 320 }}>{active?.purpose ?? '—'}</td>
+                  <td style={s.td}><code style={{ fontSize: 11 }}>{active ? Object.keys(active.output_schema).join(', ') : '—'}</code></td>
+                  <td style={s.td}>{active ? <StatusBadge status={active.status} /> : '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Prompt versions (Sprint 7.2) — every version across all prompts, read-only */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Prompt Versions ({promptVersions.length})</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
+          Full version history. A prompt id is a stable alias; each AI output is traceable to its version id.
+          Versions are append-only — never edited in place once shipped.
+        </p>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>Prompt ID</th><th style={s.th}>Version</th><th style={s.th}>Version ID</th>
+            <th style={s.th}>Status</th><th style={s.th}>Model</th><th style={s.th}>Low</th>
+            <th style={s.th}>Change Note</th><th style={s.th}>Released</th><th style={s.th}>Replaced By</th>
+          </tr></thead>
+          <tbody>
+            {promptVersions.map(v => (
+              <tr key={v.version_id}>
+                <td style={s.td}><code>{v.prompt_id}</code></td>
+                <td style={s.td}>v{v.version}</td>
+                <td style={s.td}><code>{v.version_id}</code></td>
+                <td style={s.td}><StatusBadge status={v.status} /></td>
+                <td style={s.td}><code>{v.model}</code></td>
+                <td style={s.td}>{v.low ? 'yes' : 'no'}</td>
+                <td style={{ ...s.td, maxWidth: 300 }}>{v.change_note}</td>
+                <td style={s.td}>{v.released_at}</td>
+                <td style={s.td}>{v.replaced_by ? <code>{v.replaced_by}</code> : <span style={ds.empty}>—</span>}</td>
               </tr>
             ))}
           </tbody>

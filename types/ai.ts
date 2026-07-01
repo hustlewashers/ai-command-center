@@ -16,6 +16,7 @@ export interface AiSchemaField {
 }
 
 // In-code prompt definition. Versioned; never edited in place once shipped.
+// This is the EXECUTABLE shape consumed by the router, provider, and validator.
 export interface AiPromptDefinition {
   id: AiPromptId
   version: number
@@ -24,6 +25,35 @@ export interface AiPromptDefinition {
   low: boolean                                  // low-reasoning/effort flag
   system_prompt: string
   output_schema: Record<string, AiSchemaField>
+}
+
+// ── Prompt Versioning (Sprint 7.2) ──
+// A prompt id is a STABLE ALIAS (e.g. 'REQUEST_SUMMARIZER'); its behavior is
+// pinned to a specific VERSION. Each output can then be traced to the exact
+// prompt version that produced it. Still in-code only — no DB-backed prompts.
+
+export type AiPromptAlias = AiPromptId                 // stable prompt id / alias
+export type AiPromptVersionId = string                 // e.g. 'REQUEST_SUMMARIZER@v1'
+export type AiPromptVersionStatus = 'active' | 'deprecated' | 'experimental'
+
+// A single versioned prompt. Superset of AiPromptDefinition (so it remains
+// directly executable) plus version provenance. Never edited in place once
+// shipped — add a new version instead.
+export interface AiPromptVersionDefinition extends AiPromptDefinition {
+  prompt_id: AiPromptId
+  version_id: AiPromptVersionId
+  status: AiPromptVersionStatus
+  released_at: string                                  // ISO date string
+  change_note: string
+  replaced_by?: AiPromptVersionId                      // set when superseded
+  deprecated_at?: string                               // ISO date string
+}
+
+// A prompt alias and all its versions, with which version is active.
+export interface AiPromptRegistryEntry {
+  id: AiPromptId
+  active_version: number                               // the version call_ai uses
+  versions: AiPromptVersionDefinition[]
 }
 
 // Static routing decision derived from a prompt definition.
@@ -194,8 +224,13 @@ export interface AiWorkflowTemplateInstantiationPlan {
 export interface AiExecutionOutput {
   ai_result: Record<string, unknown>   // schema-validated structured output
   prompt_id: AiPromptId
+  prompt_version: number               // Sprint 7.2 — version used
+  prompt_version_id: AiPromptVersionId // Sprint 7.2 — e.g. 'REQUEST_SUMMARIZER@v1'
   model: string
+  low: boolean                         // Sprint 7.2 — low-effort flag actually used
   confidence: number | null
+  validation_status: 'passed'          // Sprint 7.2 — reached only after schema validation
+  output_schema_fields: string[]       // Sprint 7.2 — validated schema field names
   usage: AiUsage
   latency_ms: number
   estimated_cost: number               // USD, estimate

@@ -17,6 +17,8 @@ export interface AiDraftReviewContext {
   workflow_run: { id: string; status: string } | null
   ai_step_id: string | null
   prompt_id: string | null
+  prompt_version: number | null
+  prompt_version_id: string | null
   model: string | null
   confidence: number | null
   risk_level: string | null
@@ -47,6 +49,8 @@ const EMPTY: AiDraftReviewContext = {
   workflow_run: null,
   ai_step_id: null,
   prompt_id: null,
+  prompt_version: null,
+  prompt_version_id: null,
   model: null,
   confidence: null,
   risk_level: null,
@@ -117,6 +121,8 @@ export async function getAiDraftReviewContext(
   const aiResult = ((stepOut.ai_result ?? acc.ai_result) ?? null) as Record<string, unknown> | null
 
   const promptId = str(stepOut.prompt_id) ?? str(acc.prompt_id)
+  const promptVersion = num(stepOut.prompt_version) ?? num(acc.prompt_version)
+  const promptVersionId = str(stepOut.prompt_version_id) ?? str(acc.prompt_version_id)
   const model = str(stepOut.model) ?? str(acc.model)
   const confidence =
     num(stepOut.confidence) ?? num(acc.confidence) ?? (aiResult ? num(aiResult.confidence) : null)
@@ -154,6 +160,8 @@ export async function getAiDraftReviewContext(
     workflow_run: { id: run.id, status: run.status },
     ai_step_id: str(stepData?.step_id) ?? null,
     prompt_id: promptId,
+    prompt_version: promptVersion,
+    prompt_version_id: promptVersionId,
     model,
     confidence,
     risk_level: aiResult ? str(aiResult.risk_level) : null,

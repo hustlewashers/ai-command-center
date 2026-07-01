@@ -1,6 +1,6 @@
 import { getServiceClient } from '@/lib/supabase/service'
 import { createError } from '@/lib/errors'
-import { getPrompt } from './prompts'
+import { getActivePromptVersion } from './prompts'
 import { routeModel, estimateCost } from './router'
 import { runAiProvider } from './provider'
 import { validateAiOutput } from './contract'
@@ -29,9 +29,16 @@ export async function executeCallAi(
   const contextId = logContextId(ctx)
   const workflowRunId = (ctx.workflow_run_id as string | undefined) ?? null
 
-  const prompt = getPrompt(promptId)
+  const prompt = getActivePromptVersion(promptId)
   if (!prompt) throw createError('validation', `Unknown AI prompt id: '${promptId}'`)
   const route = routeModel(promptId)
+
+  // Prompt version provenance (Sprint 7.2) — attached to output_payload + logs +
+  // agent_activity so every AI output is traceable to the exact prompt version.
+  const promptVersion   = prompt.version
+  const promptVersionId = prompt.version_id
+  const promptLow       = prompt.low
+  const schemaFields    = Object.keys(prompt.output_schema)
 
   // Build the user message from the whitelisted variables only.
   const userMessage = 'Summarize the following request as instructed.\n\n'
@@ -47,7 +54,7 @@ export async function executeCallAi(
     summary:         `AI step started: ${promptId} (${route.model})`,
     context_type:    'workflow',
     context_id:      contextId,
-    metadata:        { phase: 'started', prompt_id: promptId, prompt_version: prompt.version, model: route.model, workflow_run_id: workflowRunId, step_id: stepId ?? null },
+    metadata:        { phase: 'started', prompt_id: promptId, prompt_version: promptVersion, prompt_version_id: promptVersionId, low: promptLow, model: route.model, workflow_run_id: workflowRunId, step_id: stepId ?? null },
     status:          'recorded',
   })
 
@@ -87,7 +94,9 @@ export async function executeCallAi(
     context_type:    'workflow',
     context_id:      contextId,
     metadata: {
-      phase: 'completed', prompt_id: promptId, model: route.model,
+      phase: 'completed', prompt_id: promptId,
+      prompt_version: promptVersion, prompt_version_id: promptVersionId, low: promptLow,
+      model: route.model,
       workflow_run_id: workflowRunId, step_id: stepId ?? null,
       prompt_tokens: provider.usage.prompt_tokens,
       completion_tokens: provider.usage.completion_tokens,
@@ -95,12 +104,13 @@ export async function executeCallAi(
       latency_ms: provider.latency_ms,
       estimated_cost, confidence, mocked: provider.mocked,
       provider_mode: provider.mocked ? 'mock' : 'live',
+      validation_status: 'passed', output_schema_fields: schemaFields,
     },
     status: 'recorded',
   })
 
   // ── agent_activity (best-effort; never fails the step — TASK 4) ──
-  await recordAgentActivity(svc, ctx, promptId, route.model, provider, estimated_cost, workflowRunId, stepId ?? null)
+  await recordAgentActivity(svc, ctx, promptId, route.model, provider, estimated_cost, workflowRunId, stepId ?? null, promptVersion, promptVersionId)
 
   // ── runtime_metrics (non-fatal) ──
   await recordAiMetrics(svc, ctx, provider, estimated_cost)
@@ -108,8 +118,13 @@ export async function executeCallAi(
   return {
     ai_result: aiResult,
     prompt_id: promptId,
+    prompt_version: promptVersion,
+    prompt_version_id: promptVersionId,
     model: route.model,
+    low: promptLow,
     confidence,
+    validation_status: 'passed',
+    output_schema_fields: schemaFields,
     usage: provider.usage,
     latency_ms: provider.latency_ms,
     estimated_cost,
@@ -172,6 +187,8 @@ async function recordAgentActivity(
   estimatedCost: number,
   workflowRunId: string | null,
   stepId: string | null,
+  promptVersion: number,
+  promptVersionId: string,
 ): Promise<void> {
   try {
     const agentUserId = await resolveAgentUserId(svc, ctx)
@@ -191,7 +208,7 @@ async function recordAgentActivity(
       tool_name:       `ai:${model}`,
       summary:         `call_ai ${promptId}`,
       metadata: {
-        prompt_id: promptId, model,
+        prompt_id: promptId, prompt_version: promptVersion, prompt_version_id: promptVersionId, model,
         workflow_run_id: workflowRunId, step_id: stepId,
         session_namespace: sessionNamespace,
         prompt_tokens: provider.usage.prompt_tokens,

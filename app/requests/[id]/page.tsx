@@ -307,6 +307,15 @@ export default async function RequestDetailPage({
               <div><div style={ds.label}>Workflow Run</div><div style={ds.val}>
                 {aiDraft.workflow_run ? <Link href={`/workflow-runs/${aiDraft.workflow_run.id}`} style={ds.link}>{shortId(aiDraft.workflow_run.id)} ({aiDraft.workflow_run.status})</Link> : <span style={ds.empty}>—</span>}
               </div></div>
+              <div><div style={ds.label}>Prompt</div><div style={ds.val}>
+                {aiDraft.prompt_id ? <code>{aiDraft.prompt_id}</code> : <span style={ds.empty}>—</span>}
+              </div></div>
+              <div><div style={ds.label}>Prompt Version</div><div style={ds.val}>
+                {aiDraft.prompt_version_id ? <code>{aiDraft.prompt_version_id}</code> : aiDraft.prompt_version !== null ? <code>v{aiDraft.prompt_version}</code> : <span style={ds.empty}>—</span>}
+              </div></div>
+              <div><div style={ds.label}>Model</div><div style={ds.val}>
+                {aiDraft.model ? <code>{aiDraft.model}</code> : <span style={ds.empty}>—</span>}
+              </div></div>
               <div><div style={ds.label}>AI Confidence</div><div style={ds.val}>
                 {aiDraft.confidence !== null ? aiDraft.confidence.toFixed(2) : <span style={ds.empty}>—</span>}
               </div></div>

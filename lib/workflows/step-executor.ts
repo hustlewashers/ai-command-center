@@ -238,10 +238,15 @@ export async function executeStep(
         type:    step.type,
         success: true,
         output: {
-          ai_result:  result.ai_result,
-          prompt_id:  result.prompt_id,
-          model:      result.model,
-          confidence: result.confidence,
+          ai_result:            result.ai_result,
+          prompt_id:            result.prompt_id,
+          prompt_version:       result.prompt_version,        // Sprint 7.2
+          prompt_version_id:    result.prompt_version_id,     // Sprint 7.2
+          model:                result.model,
+          low:                  result.low,                   // Sprint 7.2
+          confidence:           result.confidence,
+          validation_status:    result.validation_status,     // Sprint 7.2
+          output_schema_fields: result.output_schema_fields,  // Sprint 7.2
         },
       }
     }

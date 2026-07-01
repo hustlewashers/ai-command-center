@@ -253,16 +253,23 @@ export default async function WorkflowRunDetailPage({
       {aiSteps.map(step => {
         const op = (step.output_payload ?? {}) as Record<string, unknown>
         const aiResult = (op['ai_result'] ?? {}) as Record<string, unknown>
+        const promptVersionId = (op['prompt_version_id'] as string | undefined)
+          ?? (typeof op['prompt_version'] === 'number' ? `v${op['prompt_version']}` : undefined)
+        const validationStatus = (op['validation_status'] as string | undefined)
+          ?? (Object.keys(aiResult).length > 0 ? 'passed' : undefined)
         const aiFields: MetaItem[] = [
           { label: 'Step', value: <code>{step.step_id}</code> },
           { label: 'Status', value: step.status },
           { label: 'Prompt', value: <code>{(op['prompt_id'] as string) ?? '—'}</code> },
+          { label: 'Prompt Version', value: typeof op['prompt_version'] === 'number' ? String(op['prompt_version']) : '—' },
+          { label: 'Prompt Version ID', value: <code>{promptVersionId ?? '—'}</code> },
           { label: 'Model', value: <code>{(op['model'] as string) ?? '—'}</code> },
+          { label: 'Low', value: typeof op['low'] === 'boolean' ? (op['low'] ? 'yes' : 'no') : '—' },
           { label: 'Confidence', value: typeof op['confidence'] === 'number' ? String(op['confidence']) : '—' },
           { label: 'Risk Level', value: <code>{(aiResult['risk_level'] as string) ?? '—'}</code> },
           { label: 'Total Tokens', value: typeof aiLogMeta['total_tokens'] === 'number' ? (aiLogMeta['total_tokens'] as number).toLocaleString() : '—' },
           { label: 'Latency', value: typeof aiLogMeta['latency_ms'] === 'number' ? formatMs(aiLogMeta['latency_ms'] as number) : '—' },
-          { label: 'Validation', value: Object.keys(aiResult).length > 0 ? 'passed (schema-validated)' : '—' },
+          { label: 'Validation', value: validationStatus ? `${validationStatus} (schema-validated)` : '—' },
           { label: 'Mocked', value: aiLogMeta['mocked'] === true ? 'yes (no OPENAI_API_KEY)' : 'no' },
         ]
         return (

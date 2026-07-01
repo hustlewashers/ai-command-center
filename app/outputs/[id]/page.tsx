@@ -97,6 +97,7 @@ export default async function OutputDetailPage({
             { label: 'Workflow Run', value: aiProvenance.workflow_run ? <Link href={`/workflow-runs/${aiProvenance.workflow_run.id}`} style={ds.link}>{shortId(aiProvenance.workflow_run.id)} ({aiProvenance.workflow_run.status})</Link> : <span style={ds.empty}>—</span> },
             { label: 'AI Step', value: aiProvenance.ai_step_id ? <code>{aiProvenance.ai_step_id}</code> : <span style={ds.empty}>—</span> },
             { label: 'Prompt', value: aiProvenance.prompt_id ? <code>{aiProvenance.prompt_id}</code> : <span style={ds.empty}>—</span> },
+            { label: 'Prompt Version', value: aiProvenance.prompt_version_id ? <code>{aiProvenance.prompt_version_id}</code> : aiProvenance.prompt_version !== null ? <code>v{aiProvenance.prompt_version}</code> : <span style={ds.empty}>—</span> },
             { label: 'Model', value: aiProvenance.model ? <code>{aiProvenance.model}</code> : <span style={ds.empty}>—</span> },
             { label: 'Confidence', value: aiProvenance.confidence !== null ? aiProvenance.confidence.toFixed(2) : <span style={ds.empty}>—</span> },
             { label: 'Risk Level', value: aiProvenance.risk_level ? <Tag>{aiProvenance.risk_level}</Tag> : <span style={ds.empty}>—</span> },

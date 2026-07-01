@@ -148,6 +148,7 @@ export default async function ApprovalDetailPage({
             { label: 'Source Request', value: aiContext.request ? <Link href={`/requests/${aiContext.request.id}#ai-summary`} style={ds.link}>{shortId(aiContext.request.id)}</Link> : <span style={ds.dim}>—</span> },
             { label: 'Workflow Run', value: aiContext.workflow_run ? <Link href={`/workflow-runs/${aiContext.workflow_run.id}`} style={ds.link}>{shortId(aiContext.workflow_run.id)} ({aiContext.workflow_run.status})</Link> : <span style={ds.dim}>—</span> },
             { label: 'Prompt', value: aiContext.prompt_id ? <code>{aiContext.prompt_id}</code> : <span style={ds.dim}>—</span> },
+            { label: 'Prompt Version', value: aiContext.prompt_version_id ? <code>{aiContext.prompt_version_id}</code> : aiContext.prompt_version !== null ? <code>v{aiContext.prompt_version}</code> : <span style={ds.dim}>—</span> },
             { label: 'Model', value: aiContext.model ? <code>{aiContext.model}</code> : <span style={ds.dim}>—</span> },
             { label: 'Confidence', value: aiContext.confidence !== null ? aiContext.confidence.toFixed(2) : <span style={ds.dim}>—</span> },
             { label: 'Risk Level', value: aiContext.risk_level ? <Tag>{aiContext.risk_level}</Tag> : <span style={ds.dim}>—</span> },
