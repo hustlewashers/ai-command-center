@@ -41,6 +41,7 @@ const AI_WORKFLOWS: Record<AiWorkflowId, AiWorkflowDefinition> = {
     template_id: 'ai_draft_output_from_entity',
     capability_id: 'request_summarization',
     agent_id: 'request_summary_assistant',
+    supported_plan_ids: ['request_summary_review_plan'],
   },
 }
 

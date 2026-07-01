@@ -69,6 +69,7 @@ const AI_AGENTS: Record<AiAgentId, AiAgentDefinition> = {
     allowed_actions: PROPOSE_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'active',
+    supported_plan_ids: ['request_summary_review_plan'],
   },
 
   // 2) Planned — parts of its chain (prompts/workflows) do not exist yet.
@@ -91,6 +92,7 @@ const AI_AGENTS: Record<AiAgentId, AiAgentDefinition> = {
     allowed_actions: PROPOSE_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    supported_plan_ids: ['request_risk_triage_plan'],
   },
 
   // 3) Planned — 'advisor' is not in the category enum, so categorized as analyst.
@@ -113,6 +115,7 @@ const AI_AGENTS: Record<AiAgentId, AiAgentDefinition> = {
     allowed_actions: PROPOSE_ONLY_ACTIONS,
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    supported_plan_ids: ['action_recommendation_plan'],
   },
 
   // 4) Planned — a read-only monitor role; composes nothing yet.
@@ -135,6 +138,7 @@ const AI_AGENTS: Record<AiAgentId, AiAgentDefinition> = {
     allowed_actions: ['observe_for_human_review'],
     forbidden_actions: FORBIDDEN_ACTIONS,
     status: 'planned',
+    supported_plan_ids: ['operations_monitoring_plan'],
   },
 }
 

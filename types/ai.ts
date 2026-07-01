@@ -139,6 +139,7 @@ export interface AiWorkflowDefinition {
   template_id?: AiWorkflowTemplateId   // Sprint 7.1 — template this workflow follows
   capability_id?: AiCapabilityId       // Sprint 7.3 — capability this workflow realizes
   agent_id?: AiAgentId                 // Sprint 7.5 — agent that composes this workflow
+  supported_plan_ids?: AiPlanId[]      // Sprint 7.6 — plans that compose this workflow
 }
 
 // ── AI Capability Registry (Sprint 7.3) ──
@@ -346,6 +347,94 @@ export interface AiAgentDefinition {
   allowed_actions: string[]
   forbidden_actions: string[]
   status: AiAgentStatus
+  supported_plan_ids?: AiPlanId[]     // Sprint 7.6 — plans that may compose this agent
+}
+
+// ── AI Plan Registry (Sprint 7.6) ──
+// The capstone of the registry stack: a PLAN is a governed, ordered SEQUENCE of
+// steps that composes agents, skills, capabilities, and workflows toward a
+// multi-step outcome — with explicit human-review / approval checkpoints between
+// governed steps. This sprint is read-model / metadata ONLY — plans are
+// NON-EXECUTABLE. They orchestrate NOTHING, run no workflow, register no prompt,
+// and hold no privilege. The registry defines the governed sequences a future
+// orchestration sprint could execute under the same draft-only, human-approval-
+// gated guarantees.
+
+export type AiPlanId =
+  | 'request_summary_review_plan'
+  | 'request_risk_triage_plan'
+  | 'action_recommendation_plan'
+  | 'operations_monitoring_plan'
+
+export type AiPlanCategory =
+  | 'review'
+  | 'triage'
+  | 'analysis'
+  | 'reporting'
+  | 'recommendation'
+  | 'monitoring'
+  | 'routing'
+
+// active  → the plan's composed chain is registered and working, even though the
+//           plan itself does not yet execute.
+// planned → declared sequence only; parts of its chain may not exist yet.
+// retired → kept for provenance; no longer offered.
+export type AiPlanStatus = 'active' | 'planned' | 'retired'
+
+// The kind of a single plan step. `approval_checkpoint` / `human_review` are the
+// governed gates between AI steps — a plan is a sequence of proposals punctuated
+// by human decisions, never a chain of autonomous actions.
+export type AiPlanStepKind =
+  | 'agent'
+  | 'skill'
+  | 'capability'
+  | 'workflow'
+  | 'approval_checkpoint'
+  | 'human_review'
+
+export interface AiPlanStepDefinition {
+  step_id: string
+  label: string
+  kind: AiPlanStepKind
+  agent_id?: AiAgentId
+  skill_id?: AiSkillId
+  capability_id?: AiCapabilityId
+  workflow_id?: AiWorkflowId
+  required: boolean
+  approval_required: boolean
+  description: string
+  output_contract?: AiSkillOutputContract   // expected draft shape, when the step produces one
+}
+
+// Governance intent restated per plan. Declarative — the runtime + RLS enforce
+// the actual gates; this documents and cannot loosen them. For Sprint 7.6 the
+// execution-bearing flags are hard-false.
+export interface AiPlanGovernancePolicy {
+  requires_human_approval: boolean
+  may_create_drafts: boolean
+  may_execute_workflows: false        // always false this sprint — plans are non-executable
+  may_mutate_governed_state: false    // always false — AI proposes, humans dispose
+  may_deliver_outputs: false          // always false — no auto-delivery
+  requires_audit_logging: boolean
+}
+
+export interface AiPlanDefinition {
+  id: AiPlanId
+  name: string
+  category: AiPlanCategory
+  purpose: string
+  description: string
+  target_entities: AiWorkflowTargetEntity[]
+  steps: AiPlanStepDefinition[]
+  allowed_agent_ids: AiAgentId[]
+  allowed_skill_ids: AiSkillId[]
+  allowed_capability_ids: AiCapabilityId[]
+  allowed_workflow_ids: AiWorkflowId[]
+  governance_policy: AiPlanGovernancePolicy
+  evaluation_signals: string[]
+  allowed_actions: string[]
+  forbidden_actions: string[]
+  status: AiPlanStatus
 }
 
 // ── AI Workflow Template Layer (Sprint 7.1) ──
