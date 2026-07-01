@@ -106,6 +106,88 @@ export interface AiWorkflowDefinition {
   approval_required: boolean       // whether a human approval gate is opened
   readiness: AiWorkflowReadinessRequirements
   status: AiWorkflowStatus
+  template_id?: AiWorkflowTemplateId  // Sprint 7.1 — template this workflow follows
+}
+
+// ── AI Workflow Template Layer (Sprint 7.1) ──
+// A reusable BLUEPRINT layer above the AI workflow registry. A template captures
+// the repeatable shape of a class of governed AI workflows (draft-from-entity,
+// classification-with-review, recommendation-with-approval) so future workflows
+// can be declared consistently without re-deriving output target, approval policy,
+// readiness policy, and governance boundaries each time. Templates are pure
+// serializable metadata / read-model + documentation — they NEVER execute, hold
+// no privilege, register no prompt, and create no runtime workflow.
+
+export type AiWorkflowTemplateId =
+  | 'ai_draft_output_from_entity'
+  | 'ai_classification_with_review'
+  | 'ai_recommendation_with_approval'
+
+// Entities a template's instantiations may run against.
+export type AiWorkflowTargetEntity =
+  | 'request' | 'task' | 'work_packet' | 'decision' | 'output' | 'project'
+
+// A declared input on a template (name + whether the model may see it).
+export interface AiWorkflowTemplateInput {
+  key: string
+  description: string
+  sensitive?: boolean   // true → must NOT be whitelisted into a prompt
+}
+
+// The kind of governed artifact a template's instantiations produce. Always a
+// DRAFT in MVP — templates cannot declare a delivered/approved output.
+export interface AiWorkflowTemplateOutputTarget {
+  type: 'output'
+  output_type: string
+  status: 'draft'
+}
+
+// Approval policy for a template. `required: true` for every governed template;
+// `must_precede_governed_change` documents that no governed transition may occur
+// before a human resolves the approval.
+export interface AiWorkflowTemplateApprovalPolicy {
+  required: boolean
+  approver_role: string
+  must_precede_governed_change: boolean
+}
+
+// Default readiness policy a template recommends for its instantiations. Reuses
+// the same requirement flags the readiness evaluator consumes.
+export type AiWorkflowTemplateReadinessPolicy = AiWorkflowReadinessRequirements
+
+export type AiWorkflowTemplateStatus = 'active' | 'experimental' | 'disabled'
+
+export interface AiWorkflowTemplateDefinition {
+  id: AiWorkflowTemplateId
+  name: string
+  purpose: string
+  category: 'draft' | 'classification' | 'recommendation'
+  supported_target_entities: AiWorkflowTargetEntity[]
+  default_prompt_id: AiPromptId | null      // null → a prompt must be supplied per instantiation
+  default_output_target: AiWorkflowTemplateOutputTarget
+  default_approval_policy: AiWorkflowTemplateApprovalPolicy
+  default_readiness_policy: AiWorkflowTemplateReadinessPolicy
+  required_inputs: AiWorkflowTemplateInput[]
+  optional_inputs: AiWorkflowTemplateInput[]
+  governed_actions_allowed: string[]        // what an instantiation MAY do (draft/propose only)
+  forbidden_actions: string[]               // what it may NEVER do (deliver, approve, transition…)
+  status: AiWorkflowTemplateStatus
+}
+
+// A concrete plan for instantiating an AI workflow from a template. Read-model
+// only in Sprint 7.1 — describes what a future registration would look like; it
+// does not register anything or execute.
+export interface AiWorkflowTemplateInstantiationPlan {
+  template_id: AiWorkflowTemplateId
+  ai_workflow_id: string            // proposed AI workflow id
+  runtime_workflow_id: string       // proposed runtime workflow id (must be built separately)
+  prompt_id: AiPromptId | null      // prompt to use (must be registered separately)
+  trigger_entity_type: AiWorkflowTargetEntity
+  required_inputs: string[]
+  output_target: AiWorkflowTemplateOutputTarget
+  approval_required: boolean
+  readiness: AiWorkflowReadinessRequirements
+  notes?: string
 }
 
 // Final, validated output of a call_ai step.
