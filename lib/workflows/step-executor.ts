@@ -247,6 +247,13 @@ export async function executeStep(
           confidence:           result.confidence,
           validation_status:    result.validation_status,     // Sprint 7.2
           output_schema_fields: result.output_schema_fields,  // Sprint 7.2
+          provider_id:          result.provider_id,           // Sprint 8.0
+          provider_mode:        result.provider_mode,         // Sprint 8.0
+          fallback_used:        result.fallback_used,         // Sprint 8.0
+          attempts_count:       result.attempts_count,        // Sprint 8.0
+          retry_count:          result.retry_count,           // Sprint 8.0
+          model_used:           result.model_used,            // Sprint 8.0
+          ...(result.error_type ? { error_type: result.error_type } : {}),
         },
       }
     }

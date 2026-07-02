@@ -11,6 +11,7 @@ import {
   getRecentAiWorkflowRuns,
   getRecentAiDraftOutputs,
   getRecentAiErrors,
+  getAiProviderHealth,
 } from '@/lib/ai/metrics'
 import { listPrompts, listPromptVersions, getActivePromptVersion } from '@/lib/ai/prompts'
 import { listAiWorkflows } from '@/lib/ai/workflows'
@@ -33,12 +34,13 @@ export default async function AiOperationsPage() {
     redirect('/login')
   }
 
-  const [summary, logs, runs, outputs, errors] = await Promise.all([
+  const [summary, logs, runs, outputs, errors, providerHealth] = await Promise.all([
     getAiMetricSummary(supabase),
     getRecentAiExecutionLogs(supabase, 20),
     getRecentAiWorkflowRuns(supabase, 20),
     getRecentAiDraftOutputs(supabase, 20),
     getRecentAiErrors(supabase, 10),
+    getAiProviderHealth(supabase),
   ])
   const prompts = listPrompts()
   const promptVersions = listPromptVersions()
@@ -79,6 +81,41 @@ export default async function AiOperationsPage() {
             <div style={s.cardLabel}>{c.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* Provider Health (Sprint 8.0) — read-only, from AI execution logs */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Provider Health</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+          <span style={{ display: 'inline-block', padding: '3px 12px', borderRadius: 4, fontSize: 12, fontWeight: 700, color: '#fff',
+            background: providerHealth.status === 'healthy' ? '#16a34a'
+              : providerHealth.status === 'degraded' ? '#d97706'
+              : providerHealth.status === 'unavailable' ? '#dc2626'
+              : '#9ca3af' }}>{providerHealth.status}</span>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            provider <code>{providerHealth.provider_id}</code> · mode <code>{providerHealth.mode}</code>
+          </span>
+        </div>
+        <div style={s.cards}>
+          {[
+            { label: 'Executions', value: String(providerHealth.executions), color: '#2563eb' },
+            { label: 'Failures', value: String(providerHealth.failures), color: providerHealth.failures > 0 ? '#dc2626' : '#6b7280' },
+            { label: 'Fallbacks', value: String(providerHealth.fallback_count), color: providerHealth.fallback_count > 0 ? '#d97706' : '#6b7280' },
+            { label: 'Avg Latency', value: providerHealth.avg_latency_ms !== null ? formatMs(providerHealth.avg_latency_ms) : '—', color: '#0891b2' },
+            { label: 'Last Success', value: providerHealth.last_success_at ? formatDate(providerHealth.last_success_at) : '—', color: '#16a34a' },
+            { label: 'Last Failure', value: providerHealth.last_failure_at ? formatDate(providerHealth.last_failure_at) : '—', color: '#dc2626' },
+            { label: 'Common Error', value: providerHealth.common_error_type ?? '—', color: '#b45309' },
+          ].map(c => (
+            <div key={c.label} style={s.card}>
+              <div style={{ ...s.cardVal, color: c.color, fontSize: 16 }}>{c.value}</div>
+              <div style={s.cardLabel}>{c.label}</div>
+            </div>
+          ))}
+        </div>
+        <p style={{ fontSize: 11, color: '#6b7280', margin: '8px 0 0' }}>
+          Derived from recent AI execution logs. In production, disable mock fallback (<code>AI_ALLOW_MOCK_FALLBACK=false</code>)
+          so provider failures fail closed and appear here as failures rather than silent fallbacks.
+        </p>
       </div>
 
       {/* AI Registry Integrity (Sprint 7.7) — read-only diagnostics */}

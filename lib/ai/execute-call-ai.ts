@@ -2,7 +2,7 @@ import { getServiceClient } from '@/lib/supabase/service'
 import { createError } from '@/lib/errors'
 import { getActivePromptVersion } from './prompts'
 import { routeModel, estimateCost } from './router'
-import { runAiProvider } from './provider'
+import { runAiProvider, AiProviderCallError } from './provider'
 import { validateAiOutput } from './contract'
 import type { AiExecutionOutput, AiPromptId } from '@/types/ai'
 import type { WorkflowExecutionContext } from '@/types/workflows'
@@ -71,8 +71,21 @@ export async function executeCallAi(
     })
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
-    await logFailure(svc, ctx, contextId, promptId, route.model, `provider: ${reason}`)
+    const errorType = err instanceof AiProviderCallError ? err.type : 'unknown'
+    await logFailure(svc, ctx, contextId, promptId, route.model, `provider: ${reason}`, errorType)
     throw new Error(`call_ai provider failed (${promptId}): ${reason}`)
+  }
+
+  // Provider provenance (Sprint 8.0) — attached to output_payload + logs.
+  const providerMeta = {
+    provider_id:    provider.provider_id,
+    provider_mode:  provider.provider_mode,
+    fallback_used:  provider.fallback_used,
+    attempts_count: provider.attempts.length,
+    retry_count:    provider.retry_count,
+    timeout_ms:     provider.timeout_ms,
+    model_used:     provider.model_used,
+    ...(provider.error_type ? { error_type: provider.error_type } : {}),
   }
 
   const validation = validateAiOutput(prompt, provider.raw_text)
@@ -103,14 +116,14 @@ export async function executeCallAi(
       total_tokens: provider.usage.total_tokens,
       latency_ms: provider.latency_ms,
       estimated_cost, confidence, mocked: provider.mocked,
-      provider_mode: provider.mocked ? 'mock' : 'live',
+      ...providerMeta,
       validation_status: 'passed', output_schema_fields: schemaFields,
     },
     status: 'recorded',
   })
 
   // ── agent_activity (best-effort; never fails the step — TASK 4) ──
-  await recordAgentActivity(svc, ctx, promptId, route.model, provider, estimated_cost, workflowRunId, stepId ?? null, promptVersion, promptVersionId)
+  await recordAgentActivity(svc, ctx, promptId, route.model, provider, estimated_cost, workflowRunId, stepId ?? null, promptVersion, promptVersionId, providerMeta)
 
   // ── runtime_metrics (non-fatal) ──
   await recordAiMetrics(svc, ctx, provider, estimated_cost)
@@ -129,6 +142,14 @@ export async function executeCallAi(
     latency_ms: provider.latency_ms,
     estimated_cost,
     mocked: provider.mocked,
+    provider_id:    provider.provider_id,
+    provider_mode:  provider.provider_mode,
+    fallback_used:  provider.fallback_used,
+    attempts_count: provider.attempts.length,
+    retry_count:    provider.retry_count,
+    timeout_ms:     provider.timeout_ms,
+    model_used:     provider.model_used,
+    ...(provider.error_type ? { error_type: provider.error_type } : {}),
   }
 }
 
@@ -137,6 +158,7 @@ type Svc = ReturnType<typeof getServiceClient>
 async function logFailure(
   svc: Svc, ctx: WorkflowExecutionContext, contextId: string,
   promptId: string, model: string, reason: string,
+  errorType?: string,
 ): Promise<void> {
   const { error } = await svc.from('execution_logs').insert({
     organization_id: ctx.organization_id,
@@ -145,7 +167,7 @@ async function logFailure(
     summary:         `AI step failed: ${promptId} — ${reason}`,
     context_type:    'workflow',
     context_id:      contextId,
-    metadata:        { phase: 'failed', prompt_id: promptId, model, error: reason },
+    metadata:        { phase: 'failed', prompt_id: promptId, model, error: reason, ...(errorType ? { error_type: errorType } : {}) },
     status:          'flagged',
   })
   if (error) console.warn('[call_ai] failure log write failed:', error.message)
@@ -189,6 +211,7 @@ async function recordAgentActivity(
   stepId: string | null,
   promptVersion: number,
   promptVersionId: string,
+  providerMeta: Record<string, unknown>,
 ): Promise<void> {
   try {
     const agentUserId = await resolveAgentUserId(svc, ctx)
@@ -211,6 +234,7 @@ async function recordAgentActivity(
         prompt_id: promptId, prompt_version: promptVersion, prompt_version_id: promptVersionId, model,
         workflow_run_id: workflowRunId, step_id: stepId,
         session_namespace: sessionNamespace,
+        ...providerMeta,
         prompt_tokens: provider.usage.prompt_tokens,
         completion_tokens: provider.usage.completion_tokens,
         total_tokens: provider.usage.total_tokens,

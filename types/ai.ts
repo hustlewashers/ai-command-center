@@ -141,13 +141,91 @@ export interface AiUsage {
   total_tokens: number
 }
 
+// ── Provider Hardening (Sprint 8.0) ──
+// Production-readiness types for the single AI egress point: which provider was
+// used, in what mode, how many attempts, and how a failure was classified. The
+// governed workflow model is unchanged — a provider failure fails the call_ai
+// step normally (recoverable) and never bypasses an approval.
+
+export type AiProviderId = 'openai' | 'mock'
+
+// Health of a provider as inferred from telemetry.
+export type AiProviderStatus = 'healthy' | 'degraded' | 'unavailable' | 'disabled' | 'unknown'
+
+// live     → real provider call succeeded.
+// mock     → deterministic mock was used by configuration (no key / AI_PROVIDER_MODE=mock).
+// fallback → a live call was attempted, failed, and the mock was used as a fallback.
+export type AiProviderMode = 'live' | 'mock' | 'fallback'
+
+// Structured error classification for a failed provider attempt.
+export type AiProviderErrorType =
+  | 'auth_error'
+  | 'rate_limited'
+  | 'timeout'
+  | 'server_error'
+  | 'invalid_response'
+  | 'configuration_error'
+  | 'unknown'
+
+export interface AiProviderError {
+  type: AiProviderErrorType
+  message: string
+  status?: number       // HTTP status when applicable
+  retryable: boolean
+}
+
+// Resolved provider configuration (from env, per call — server-only).
+export interface AiProviderConfig {
+  provider_id: AiProviderId       // which provider the config targets
+  mode: 'live' | 'mock'           // configured default mode (fallback is a runtime outcome)
+  has_key: boolean
+  model_override: string | null   // OPENAI_MODEL, if set
+  timeout_ms: number
+  max_retries: number
+  allow_mock_fallback: boolean
+}
+
+// One attempt against a provider within a single call.
+export interface AiProviderAttempt {
+  attempt: number                 // 1-based
+  provider_id: AiProviderId
+  ok: boolean
+  status?: number
+  error_type?: AiProviderErrorType
+  latency_ms: number
+}
+
 // Raw result from the provider (text expected to be JSON for the schema).
+// Extended in Sprint 8.0 with provider provenance — additive, back-compatible.
 export interface AiProviderResult {
   raw_text: string
   usage: AiUsage
   model: string
   latency_ms: number
   mocked: boolean
+  // Provider hardening provenance (Sprint 8.0):
+  provider_id: AiProviderId
+  provider_mode: AiProviderMode
+  fallback_used: boolean
+  attempts: AiProviderAttempt[]
+  retry_count: number             // attempts beyond the first against the live provider
+  timeout_ms: number
+  model_used: string
+  error_type?: AiProviderErrorType // last live error type when a fallback was used
+}
+
+// Aggregate provider health for the AI Operations panel (read-only telemetry).
+export interface AiProviderHealthSummary {
+  provider_id: AiProviderId
+  mode: AiProviderMode | 'unknown'
+  status: AiProviderStatus
+  executions: number
+  failures: number
+  fallback_count: number
+  avg_latency_ms: number | null
+  last_success_at: string | null
+  last_failure_at: string | null
+  common_error_type: AiProviderErrorType | null
 }
 
 // Result of validating provider text against a prompt's output_schema.
@@ -601,4 +679,13 @@ export interface AiExecutionOutput {
   latency_ms: number
   estimated_cost: number               // USD, estimate
   mocked: boolean
+  // Provider hardening provenance (Sprint 8.0):
+  provider_id: AiProviderId
+  provider_mode: AiProviderMode
+  fallback_used: boolean
+  attempts_count: number
+  retry_count: number
+  timeout_ms: number
+  model_used: string
+  error_type?: AiProviderErrorType     // last live error type when a fallback occurred
 }

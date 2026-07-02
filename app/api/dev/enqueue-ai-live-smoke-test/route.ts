@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enqueue } from '@/lib/jobs/enqueue'
 import { getServiceClient } from '@/lib/supabase/service'
+import { getProviderConfig } from '@/lib/ai/provider-config'
 
 // Dev-only endpoint (Sprint 6.3) — hard-blocked in production. Not linked in nav.
 // Enqueues request_ai_summary to exercise the LIVE OpenAI provider path.
@@ -29,8 +30,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const hasKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim().length > 0)
-  const providerMode = hasKey ? 'live' : 'mock'
+  // Provider config echo (Sprint 8.0) — never includes the key itself.
+  const cfg = getProviderConfig()
+  const hasKey = cfg.has_key
+  const providerMode = cfg.mode
+  const providerConfig = {
+    mode: cfg.mode,
+    has_key: cfg.has_key,
+    model_override: cfg.model_override,
+    timeout_ms: cfg.timeout_ms,
+    max_retries: cfg.max_retries,
+    allow_mock_fallback: cfg.allow_mock_fallback,
+  }
 
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
@@ -39,8 +50,10 @@ export async function POST(request: NextRequest) {
     if (forceLive && !hasKey) {
       return NextResponse.json({
         error: 'force_live requested but OPENAI_API_KEY is not set',
+        error_type: 'configuration_error',
         hint: 'Set OPENAI_API_KEY in .env.local to test the live provider, or omit force_live to use the mock.',
         provider_mode: 'mock',
+        provider_config: providerConfig,
       }, { status: 400 })
     }
 
@@ -78,6 +91,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       job: data,
       provider_mode: providerMode,
+      provider_config: providerConfig,
       note: hasKey
         ? 'OPENAI_API_KEY present — call_ai will use the live provider. Run POST /api/worker/run to execute.'
         : 'OPENAI_API_KEY absent — call_ai will use the deterministic mock. Run POST /api/worker/run to execute.',

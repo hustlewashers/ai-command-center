@@ -270,7 +270,13 @@ export default async function WorkflowRunDetailPage({
           { label: 'Total Tokens', value: typeof aiLogMeta['total_tokens'] === 'number' ? (aiLogMeta['total_tokens'] as number).toLocaleString() : '—' },
           { label: 'Latency', value: typeof aiLogMeta['latency_ms'] === 'number' ? formatMs(aiLogMeta['latency_ms'] as number) : '—' },
           { label: 'Validation', value: validationStatus ? `${validationStatus} (schema-validated)` : '—' },
-          { label: 'Mocked', value: aiLogMeta['mocked'] === true ? 'yes (no OPENAI_API_KEY)' : 'no' },
+          { label: 'Provider', value: <code>{(op['provider_id'] as string) ?? '—'}</code> },
+          { label: 'Provider Mode', value: <code>{(op['provider_mode'] as string) ?? (aiLogMeta['mocked'] === true ? 'mock' : '—')}</code> },
+          { label: 'Fallback Used', value: op['fallback_used'] === true ? 'yes' : op['fallback_used'] === false ? 'no' : '—' },
+          { label: 'Attempts', value: typeof op['attempts_count'] === 'number' ? String(op['attempts_count']) : '—' },
+          { label: 'Retries', value: typeof op['retry_count'] === 'number' ? String(op['retry_count']) : '—' },
+          ...(op['error_type'] ? [{ label: 'Error Type', value: <code style={{ color: '#dc2626' }}>{op['error_type'] as string}</code> }] as MetaItem[] : []),
+          { label: 'Mocked', value: aiLogMeta['mocked'] === true || op['provider_id'] === 'mock' ? 'yes' : 'no' },
         ]
         return (
           <div key={step.id} style={s.section}>
