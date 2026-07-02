@@ -72,6 +72,34 @@ const AI_SKILLS: Record<AiSkillId, AiSkillDefinition> = {
     supported_agent_ids: ['request_summary_assistant'],
   },
 
+  // Active — composed by the work_packet_summarization capability (Sprint 7.9).
+  summarize_work_packet: {
+    id:          'summarize_work_packet',
+    name:        'Summarize Work Packet',
+    category:    'summarize',
+    purpose:     'Produce a concise structured draft summary of a work packet.',
+    description: 'The summarization operation behind work_packet_summarization: reads a work packet\'s title/objective/scope and returns a structured draft (title, summary, next steps, risk, confidence). Draft-only; a human approval gates any delivery.',
+    supported_input_entities: ['work_packet'],
+    supported_output_types: ['report'],
+    default_capability_id: 'work_packet_summarization',
+    default_prompt_id:     'WORK_PACKET_SUMMARIZER',
+    required_inputs: [
+      { key: 'title',     description: 'The work packet title to summarize.' },
+      { key: 'objective', description: 'The work packet objective/scope to summarize.' },
+    ],
+    optional_inputs: [],
+    output_contract: {
+      type: 'output', output_type: 'report', status: 'draft',
+      expected_fields: ['title', 'summary', 'recommended_next_steps', 'risk_level', 'confidence'],
+    },
+    governance_policy: DRAFT_GOVERNANCE,
+    evaluation_signals: ['confidence', 'risk_level', 'approval_outcome'],
+    allowed_actions: DRAFT_ONLY_ACTIONS,
+    forbidden_actions: FORBIDDEN_ACTIONS,
+    status: 'active',
+    supported_agent_ids: ['work_packet_summary_assistant'],
+  },
+
   // 2) Planned — no prompt, no runtime workflow yet.
   classify_entity: {
     id:          'classify_entity',

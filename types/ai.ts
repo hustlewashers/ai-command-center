@@ -3,7 +3,7 @@
 // it produces validated, structured DRAFT output only. It never approves,
 // delivers, or mutates governed state.
 
-export type AiPromptId = 'REQUEST_SUMMARIZER'
+export type AiPromptId = 'REQUEST_SUMMARIZER' | 'WORK_PACKET_SUMMARIZER'
 
 export type AiFieldType = 'string' | 'number' | 'boolean' | 'string[]' | 'enum'
 
@@ -164,7 +164,7 @@ export interface AiValidationResult {
 // readiness requirements. This does NOT execute workflows — the runtime registry
 // still owns execution. It centralizes the metadata that UI + readiness read.
 
-export type AiWorkflowId = 'request_ai_summary'
+export type AiWorkflowId = 'request_ai_summary' | 'work_packet_ai_summary'
 
 // Declarative readiness requirements for an AI workflow. The readiness evaluator
 // reads these flags rather than hardcoding them, so a new AI workflow can declare
@@ -194,7 +194,7 @@ export interface AiWorkflowDefinition {
   purpose: string
   prompt_id: AiPromptId            // prompt driving the call_ai step
   runtime_workflow_id: string      // workflow id executed by lib/workflows/registry.ts
-  trigger_entity_type: 'request'   // what entity this AI workflow runs against
+  trigger_entity_type: 'request' | 'work_packet'   // what entity this AI workflow runs against
   required_inputs: string[]        // whitelisted inputs the workflow needs
   output_target: AiWorkflowOutputTarget
   approval_required: boolean       // whether a human approval gate is opened
@@ -216,6 +216,7 @@ export interface AiWorkflowDefinition {
 
 export type AiCapabilityId =
   | 'request_summarization'
+  | 'work_packet_summarization'
   | 'risk_assessment'
   | 'action_recommendation'
   | 'classification'
@@ -281,6 +282,7 @@ export interface AiCapabilityDefinition {
 
 export type AiSkillId =
   | 'summarize_request'
+  | 'summarize_work_packet'
   | 'classify_entity'
   | 'assess_entity_risk'
   | 'recommend_next_action'
@@ -357,6 +359,7 @@ export interface AiSkillDefinition {
 
 export type AiAgentId =
   | 'request_summary_assistant'
+  | 'work_packet_summary_assistant'
   | 'risk_review_analyst'
   | 'action_recommendation_advisor'
   | 'operations_monitor'
@@ -426,6 +429,7 @@ export interface AiAgentDefinition {
 
 export type AiPlanId =
   | 'request_summary_review_plan'
+  | 'work_packet_summary_review_plan'
   | 'request_risk_triage_plan'
   | 'action_recommendation_plan'
   | 'operations_monitoring_plan'

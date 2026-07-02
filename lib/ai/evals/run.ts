@@ -10,6 +10,7 @@ import type {
 import { listPromptVersions } from '../prompts'
 import { validateAiOutput } from '../contract'
 import { REQUEST_SUMMARIZER_V1_SUITE } from './request-summarizer'
+import { WORK_PACKET_SUMMARIZER_V1_SUITE } from './work-packet-summarizer'
 
 // Sprint 7.8 — Prompt Evaluation Runner.
 //
@@ -23,6 +24,7 @@ import { REQUEST_SUMMARIZER_V1_SUITE } from './request-summarizer'
 // All registered eval suites (add new suites here).
 const SUITES: AiPromptEvalSuite[] = [
   REQUEST_SUMMARIZER_V1_SUITE,
+  WORK_PACKET_SUMMARIZER_V1_SUITE,
 ]
 
 export function listPromptEvalSuites(): AiPromptEvalSuite[] {

@@ -72,6 +72,30 @@ const AI_AGENTS: Record<AiAgentId, AiAgentDefinition> = {
     supported_plan_ids: ['request_summary_review_plan'],
   },
 
+  // Active — its composed chain (work_packet_ai_summary) is registered and
+  // working. The agent itself is still non-executable metadata (Sprint 7.9).
+  work_packet_summary_assistant: {
+    id:          'work_packet_summary_assistant',
+    name:        'Work Packet Summary Assistant',
+    category:    'assistant',
+    purpose:     'Helps summarize work packets into governed draft outputs.',
+    description: 'A governed assistant role over the work-packet-summarization chain. Non-executable in this sprint. Any real output flows through the governed work_packet_ai_summary workflow and a human approval.',
+    scope: {
+      target_entities: ['work_packet'],
+      description: 'Work packets within the operator\'s own organization/department scope.',
+    },
+    allowed_skill_ids:      ['summarize_work_packet'],
+    allowed_capability_ids: ['work_packet_summarization'],
+    allowed_workflow_ids:   ['work_packet_ai_summary'],
+    default_prompt_ids:     ['WORK_PACKET_SUMMARIZER'],
+    governance_policy: AGENT_GOVERNANCE,
+    evaluation_signals: ['confidence', 'approval_outcome'],
+    allowed_actions: PROPOSE_ONLY_ACTIONS,
+    forbidden_actions: FORBIDDEN_ACTIONS,
+    status: 'active',
+    supported_plan_ids: ['work_packet_summary_review_plan'],
+  },
+
   // 2) Planned — parts of its chain (prompts/workflows) do not exist yet.
   risk_review_analyst: {
     id:          'risk_review_analyst',

@@ -15,7 +15,7 @@ export interface WorkflowStepDefinition {
 
 // Entity kinds that can trigger a workflow (Sprint 5.8). Mirrors
 // execution_logs.context_type / workflow_runs.trigger_entity_type vocabulary.
-export type WorkflowTriggerEntityType = 'request' | 'task' | 'approval'
+export type WorkflowTriggerEntityType = 'request' | 'task' | 'approval' | 'work_packet'
 
 export interface WorkflowDefinition {
   id: string

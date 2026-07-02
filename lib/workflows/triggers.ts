@@ -10,6 +10,7 @@ import {
   REQUEST_AI_SUMMARY_WORKFLOW_ID,
   type AiSummaryRecommendedAction,
 } from '@/lib/workflows/readiness/ai-summary'
+import { WORK_PACKET_AI_SUMMARY_WORKFLOW_ID } from '@/lib/workflows/readiness/work-packet-summary'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { UserContext } from '@/types/api'
 import type { WorkflowTriggerEntityType } from '@/types/workflows'
@@ -418,6 +419,139 @@ async function logAiSummaryTrigger(
     status: 'recorded',
   })
   if (error) console.warn('[ai-summary-trigger] audit log failed:', error.message)
+}
+
+// ── Work Packet AI summary trigger (Sprint 7.9) ──────────────
+// Manually starts work_packet_ai_summary for a work packet. Orchestration only:
+// validates, de-duplicates, enqueues — the worker executes the governed call_ai
+// step (draft output + pending approval; never delivers).
+function wpAiSummaryNotTriggered(reason: string): WorkflowTriggerResult {
+  return { triggered: false, deduped: false, workflow_id: WORK_PACKET_AI_SUMMARY_WORKFLOW_ID, background_job_id: null, workflow_run_id: null, reason }
+}
+
+export async function triggerWorkPacketAiSummary(
+  workPacketId: string,
+  ctx: UserContext,
+): Promise<WorkflowTriggerResult> {
+  if (ctx.role === 'read_only') {
+    throw createError('forbidden', 'read_only role cannot trigger AI summaries')
+  }
+
+  const svc = getServiceClient()
+  const workflowId = WORK_PACKET_AI_SUMMARY_WORKFLOW_ID
+
+  if (!getWorkflow(workflowId)) return wpAiSummaryNotTriggered(`No workflow '${workflowId}' registered`)
+
+  const { data: wp, error: wpErr } = await svc
+    .from('work_packets')
+    .select('id, organization_id, department_id, parent_type, parent_id, title, objective, author_user_id')
+    .eq('id', workPacketId)
+    .eq('organization_id', ctx.organizationId)
+    .maybeSingle()
+
+  if (wpErr) throw createError('internal', `wp ai summary: work packet fetch failed: ${wpErr.message}`)
+  if (!wp) throw createError('not_found', 'Work packet not found')
+  const w = wp as {
+    id: string; organization_id: string; department_id: string | null
+    parent_type: string; parent_id: string; title: string | null; objective: string | null
+    author_user_id: string | null
+  }
+
+  const departmentId = w.department_id ?? ctx.departmentId
+  if (!departmentId) {
+    const result = wpAiSummaryNotTriggered('Work packet has no department; work_packet_ai_summary not triggered')
+    await logWpAiSummaryTrigger(svc, ctx, w.organization_id, w.id, result, ['department_id'], 'fill_missing_inputs')
+    return result
+  }
+
+  // Parent task → project + task_id. create_output requires both (outputs.task_id NOT NULL).
+  if (w.parent_type !== 'task') {
+    const result = wpAiSummaryNotTriggered('Work packet has no parent task; work_packet_ai_summary not triggered')
+    await logWpAiSummaryTrigger(svc, ctx, w.organization_id, w.id, result, ['task_id'], 'link_parent_task')
+    return result
+  }
+  const { data: task, error: taskErr } = await svc.from('tasks')
+    .select('id, project_id').eq('id', w.parent_id).is('deleted_at', null).maybeSingle()
+  if (taskErr) throw createError('internal', `wp ai summary: parent task fetch failed: ${taskErr.message}`)
+  const t = task as { id: string; project_id: string | null } | null
+  if (!t) {
+    const result = wpAiSummaryNotTriggered('Work packet parent task not found; work_packet_ai_summary not triggered')
+    await logWpAiSummaryTrigger(svc, ctx, w.organization_id, w.id, result, ['task_id'], 'link_parent_task')
+    return result
+  }
+  if (!t.project_id) {
+    const result = wpAiSummaryNotTriggered('Parent task has no project; work_packet_ai_summary not triggered')
+    await logWpAiSummaryTrigger(svc, ctx, w.organization_id, w.id, result, ['project_id'], 'fill_missing_inputs')
+    return result
+  }
+
+  const existing = await findActiveWorkflow(svc, w.organization_id, 'work_packet', w.id, workflowId)
+  if (existing) {
+    await logWpAiSummaryTrigger(svc, ctx, w.organization_id, w.id, existing)
+    return existing
+  }
+
+  const inputs = {
+    organization_id:     w.organization_id,
+    department_id:       departmentId,
+    project_id:          t.project_id,
+    created_by:          w.author_user_id ?? ctx.userId,
+    task_id:             t.id,
+    work_packet_id:      w.id,
+    title:               w.title ?? 'Work packet',
+    objective:           w.objective ?? '',
+    trigger_type:        'manual_ai_summary',
+    trigger_entity_type: 'work_packet',
+    trigger_entity_id:   w.id,
+  }
+
+  const jobId = await enqueue({
+    job_type:           'workflow_step',
+    organization_id:    w.organization_id,
+    payload:            { workflow_id: workflowId, inputs },
+    created_by_user_id: ctx.userId,
+  })
+
+  const result: WorkflowTriggerResult = {
+    triggered: true, deduped: false, workflow_id: workflowId,
+    background_job_id: jobId, workflow_run_id: null,
+    reason: 'Work packet AI summary workflow enqueued',
+  }
+  await logWpAiSummaryTrigger(svc, ctx, w.organization_id, w.id, result)
+  return result
+}
+
+async function logWpAiSummaryTrigger(
+  svc: SupabaseClient, ctx: UserContext, organizationId: string,
+  workPacketId: string, result: WorkflowTriggerResult,
+  missing: string[] = [],
+  recommendedAction: string | null = null,
+): Promise<void> {
+  const outcome = triggerOutcome(result)
+  const { error } = await svc.from('execution_logs').insert({
+    organization_id: organizationId,
+    event_type:      'state_change',
+    actor:           'workflow-trigger',
+    summary:         `Work packet AI summary trigger ${outcome} for work packet ${workPacketId}: ${result.reason}`,
+    context_type:    'workflow',   // execution_logs.context_type check allows only request/task/workflow
+    context_id:      workPacketId,
+    metadata: {
+      trigger_type:    'manual_ai_summary',
+      workflow_id:     WORK_PACKET_AI_SUMMARY_WORKFLOW_ID,
+      trigger_result:  outcome,
+      work_packet_id:  workPacketId,
+      triggered:       result.triggered,
+      deduped:         result.deduped,
+      reason:          result.reason,
+      missing,
+      recommended_action: recommendedAction,
+      actor_user_id:   ctx.userId,
+      background_job_id: result.background_job_id,
+      workflow_run_id: result.workflow_run_id,
+    },
+    status: 'recorded',
+  })
+  if (error) console.warn('[wp-ai-summary-trigger] audit log failed:', error.message)
 }
 
 // ── Task trigger (forward-looking) ───────────────────────────

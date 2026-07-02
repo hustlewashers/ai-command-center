@@ -43,6 +43,32 @@ const AI_WORKFLOWS: Record<AiWorkflowId, AiWorkflowDefinition> = {
     agent_id: 'request_summary_assistant',
     supported_plan_ids: ['request_summary_review_plan'],
   },
+
+  work_packet_ai_summary: {
+    id:                  'work_packet_ai_summary',
+    name:                'Work Packet → AI Summary (draft)',
+    purpose:             'AI summarizes a work packet into a draft output and opens a pending approval for human review.',
+    prompt_id:           'WORK_PACKET_SUMMARIZER',
+    runtime_workflow_id: 'work_packet_ai_summary',
+    trigger_entity_type: 'work_packet',
+    required_inputs:     ['organization_id', 'department_id', 'project_id', 'task_id', 'work_packet_id', 'title', 'objective'],
+    output_target:       { type: 'output', output_type: 'report', status: 'draft' },
+    approval_required:   true,
+    readiness: {
+      require_project:     true,
+      require_department:  true,
+      require_linked_task: true,
+      block_active_run:    true,
+      block_active_job:    true,
+      block_failed:        true,
+      block_completed:     true,
+    },
+    status: 'active',
+    template_id: 'ai_draft_output_from_entity',
+    capability_id: 'work_packet_summarization',
+    agent_id: 'work_packet_summary_assistant',
+    supported_plan_ids: ['work_packet_summary_review_plan'],
+  },
 }
 
 export function getAiWorkflow(id: string): AiWorkflowDefinition | undefined {

@@ -69,6 +69,41 @@ const WORKFLOWS: Record<string, WorkflowDefinition> = {
       },
     ],
   },
+
+  // Sprint 7.9 — second governed AI workflow. Same draft-only, human-gated shape
+  // as request_ai_summary, but summarizes a WORK PACKET. AI produces a DRAFT
+  // output attached to the work packet's parent task, then a PENDING approval is
+  // opened for human review. No delivery, no auto-approval.
+  work_packet_ai_summary: {
+    id:          'work_packet_ai_summary',
+    name:        'Work Packet → AI Summary (draft)',
+    description: 'AI summarizes a work packet into a draft output and opens a pending approval for human review.',
+    steps: [
+      {
+        id:   'log_start',
+        type: 'write_execution_log',
+        params: { message: 'Workflow started: work_packet_ai_summary' },
+      },
+      {
+        id:   'ai_summarize',
+        type: 'call_ai',
+        params: { prompt_id: 'WORK_PACKET_SUMMARIZER', input_keys: ['title', 'objective'] },
+      },
+      {
+        id:   'create_summary_output',
+        type: 'create_output',
+        params: { output_type: 'report' },
+      },
+      {
+        id:   'request_review',
+        type: 'request_approval',
+      },
+      {
+        id:   'complete',
+        type: 'complete',
+      },
+    ],
+  },
 }
 
 export function getWorkflow(id: string): WorkflowDefinition | undefined {

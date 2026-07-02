@@ -55,6 +55,48 @@ const REGISTRY: Record<AiPromptId, AiPromptRegistryEntry> = {
       },
     ],
   },
+
+  WORK_PACKET_SUMMARIZER: {
+    id: 'WORK_PACKET_SUMMARIZER',
+    active_version: 1,
+    versions: [
+      {
+        id:         'WORK_PACKET_SUMMARIZER',
+        prompt_id:  'WORK_PACKET_SUMMARIZER',
+        version:    1,
+        version_id: 'WORK_PACKET_SUMMARIZER@v1',
+        status:     'active',
+        released_at: '2026-07-02',
+        change_note: 'Initial version: structured DRAFT work-packet summary for human review.',
+        purpose: 'Summarize a governed work packet into a structured DRAFT output for human review.',
+        model:   'gpt-5.5',
+        low:     true,
+        system_prompt: [
+          'You are a careful operations assistant inside a governed workflow runtime.',
+          'You produce DRAFT content only. You never approve, reject, deliver, or finalize anything.',
+          'You never take or recommend irreversible actions; a human reviews everything you produce.',
+          'Summarize the provided work packet faithfully using its title, objective, and scope if present.',
+          'Do not invent facts not present in the input. Include practical, concrete next steps.',
+          '',
+          'Return ONLY a single JSON object — no prose, no markdown, no code fences — with EXACTLY these fields:',
+          '{',
+          '  "title": string,                       // short title for the draft summary',
+          '  "summary": string,                     // concise plain-text summary of the work packet',
+          '  "recommended_next_steps": string[],    // 1-5 practical follow-up actions (suggestions only)',
+          '  "risk_level": "low" | "medium" | "high",',
+          '  "confidence": number                   // 0..1, your confidence in this summary',
+          '}',
+        ].join('\n'),
+        output_schema: {
+          title:                  { type: 'string',  required: true,  max_len: 200 },
+          summary:                { type: 'string',  required: true,  max_len: 4000 },
+          recommended_next_steps: { type: 'string[]', required: true },
+          risk_level:             { type: 'enum',    required: true, enum: ['low', 'medium', 'high'] },
+          confidence:             { type: 'number',  required: true },
+        },
+      },
+    ],
+  },
 }
 
 // ── Registry accessors ──

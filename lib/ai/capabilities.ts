@@ -70,6 +70,31 @@ const AI_CAPABILITIES: Record<AiCapabilityId, AiCapabilityDefinition> = {
     supported_agent_ids: ['request_summary_assistant'],
   },
 
+  // Active — realized by work_packet_ai_summary (Sprint 7.9).
+  work_packet_summarization: {
+    id:          'work_packet_summarization',
+    name:        'Work Packet Summarization',
+    category:    'summarization',
+    purpose:     'Summarize a work packet into a structured draft for human review.',
+    description: 'Reads a work packet\'s title/objective/scope and produces a concise, structured draft summary with recommended next steps, a risk level, and a confidence score. Draft-only; a human approval gates any delivery.',
+    supported_target_entities: ['work_packet'],
+    default_prompt_id:   'WORK_PACKET_SUMMARIZER',
+    default_template_id: 'ai_draft_output_from_entity',
+    output_contract: {
+      type: 'output',
+      output_type: 'report',
+      status: 'draft',
+      expected_fields: ['title', 'summary', 'recommended_next_steps', 'risk_level', 'confidence'],
+    },
+    governance_policy: DRAFT_GOVERNANCE,
+    evaluation_signals: ['confidence', 'risk_level', 'approval_outcome'],
+    allowed_actions: DRAFT_ONLY_ACTIONS,
+    forbidden_actions: FORBIDDEN_ACTIONS,
+    status: 'active',
+    default_skill_id: 'summarize_work_packet',
+    supported_agent_ids: ['work_packet_summary_assistant'],
+  },
+
   // 2) Planned — no prompt, no runtime workflow yet.
   risk_assessment: {
     id:          'risk_assessment',

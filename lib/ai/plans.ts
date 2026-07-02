@@ -95,6 +95,52 @@ const AI_PLANS: Record<AiPlanId, AiPlanDefinition> = {
     status: 'active',
   },
 
+  // Active — its composed chain (work_packet_ai_summary) is registered and
+  // working. The plan itself is still non-executable metadata (Sprint 7.9).
+  work_packet_summary_review_plan: {
+    id:          'work_packet_summary_review_plan',
+    name:        'Work Packet Summary Review Plan',
+    category:    'review',
+    purpose:     'Generate and review a governed work packet summary draft.',
+    description: 'A governed two-phase plan: the work_packet_summary_assistant proposes a draft summary via the work_packet_ai_summary workflow, then a human reviews and resolves the pending approval. Non-executable in this sprint — it documents the sequence; the existing workflow + approval do the real work.',
+    target_entities: ['work_packet'],
+    steps: [
+      {
+        step_id: 'summarize',
+        label: 'AI draft summary',
+        kind: 'workflow',
+        agent_id: 'work_packet_summary_assistant',
+        skill_id: 'summarize_work_packet',
+        capability_id: 'work_packet_summarization',
+        workflow_id: 'work_packet_ai_summary',
+        required: true,
+        approval_required: false,
+        description: 'Run the governed work_packet_ai_summary workflow to produce a DRAFT summary output (no delivery).',
+        output_contract: {
+          type: 'output', output_type: 'report', status: 'draft',
+          expected_fields: ['title', 'summary', 'recommended_next_steps', 'risk_level', 'confidence'],
+        },
+      },
+      {
+        step_id: 'human_review',
+        label: 'Human review + approval',
+        kind: 'approval_checkpoint',
+        required: true,
+        approval_required: true,
+        description: 'A human reviews the draft and resolves the pending approval before anything is delivered. No governed transition occurs without this.',
+      },
+    ],
+    allowed_agent_ids:      ['work_packet_summary_assistant'],
+    allowed_skill_ids:      ['summarize_work_packet'],
+    allowed_capability_ids: ['work_packet_summarization'],
+    allowed_workflow_ids:   ['work_packet_ai_summary'],
+    governance_policy: PLAN_GOVERNANCE,
+    evaluation_signals: ['confidence', 'approval_outcome'],
+    allowed_actions: PROPOSE_ONLY_ACTIONS,
+    forbidden_actions: FORBIDDEN_ACTIONS,
+    status: 'active',
+  },
+
   // 2) Planned — parts of its chain (prompts/workflows) do not exist yet.
   request_risk_triage_plan: {
     id:          'request_risk_triage_plan',

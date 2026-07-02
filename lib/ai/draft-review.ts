@@ -14,7 +14,7 @@ import { aiRuntimeWorkflowIds } from '@/lib/ai/workflows'
 
 export interface AiDraftReviewContext {
   is_ai: boolean
-  workflow_run: { id: string; status: string } | null
+  workflow_run: { id: string; status: string; workflow_id: string } | null
   ai_step_id: string | null
   prompt_id: string | null
   prompt_version: number | null
@@ -40,6 +40,7 @@ export interface AiDraftReviewOptions {
 type RunRow = {
   id: string
   status: string
+  workflow_id: string
   accumulated: Record<string, unknown> | null
   trigger_entity_id: string | null
 }
@@ -157,7 +158,7 @@ export async function getAiDraftReviewContext(
 
   return {
     is_ai: true,
-    workflow_run: { id: run.id, status: run.status },
+    workflow_run: { id: run.id, status: run.status, workflow_id: run.workflow_id },
     ai_step_id: str(stepData?.step_id) ?? null,
     prompt_id: promptId,
     prompt_version: promptVersion,
@@ -182,7 +183,7 @@ async function resolveRun(
   opts: AiDraftReviewOptions,
   outputId: string | null,
 ): Promise<RunRow | null> {
-  const cols = 'id, status, accumulated, trigger_entity_id'
+  const cols = 'id, status, workflow_id, accumulated, trigger_entity_id'
   // Any registered governed AI workflow counts — not just request_ai_summary — so
   // new AI workflows are recognized without editing this read model.
   const aiWorkflowIds = aiRuntimeWorkflowIds()
