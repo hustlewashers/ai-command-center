@@ -56,6 +56,70 @@ export interface AiPromptRegistryEntry {
   versions: AiPromptVersionDefinition[]
 }
 
+// ── Prompt Evaluation Framework (Sprint 7.8) ──
+// Offline, deterministic, DB-free evaluation of a prompt VERSION before it is
+// activated. Each case pairs an input with a mock-safe candidate output; the
+// runner validates that output against the version's schema and scores it. No
+// live provider call is required — this exercises the version's contract + rubric
+// so a new/changed version can be judged before `active_version` moves to it.
+
+export type AiPromptEvalStatus = 'passed' | 'partial' | 'failed'
+
+// A single scoring breakdown for one case.
+export interface AiPromptEvalScore {
+  schema_valid: boolean          // candidate passed validateAiOutput
+  required_fields_present: boolean
+  completeness: number           // 0..1 — fraction of expected_fields present & non-empty
+  risk_level_valid: boolean      // candidate risk_level within schema enum (if applicable)
+  next_steps_present: boolean    // recommended_next_steps non-empty (if applicable)
+  score: number                  // 0..1 aggregate
+}
+
+// One evaluation case: a representative, mock-safe input + expected model output.
+export interface AiPromptEvalCase {
+  id: string
+  description: string
+  input_payload: Record<string, unknown>       // variables that would be sent to the prompt
+  candidate_output: Record<string, unknown>     // mock-safe representative model output to score
+  expected_fields: string[]                     // fields that must be present & non-empty
+  notes?: string
+}
+
+// The result of scoring one case against a prompt version.
+export interface AiPromptEvalResult {
+  case_id: string
+  prompt_id: AiPromptId
+  prompt_version_id: AiPromptVersionId
+  status: AiPromptEvalStatus
+  score: AiPromptEvalScore
+  errors: string[]               // schema validation errors, if any
+  notes: string
+}
+
+// A named suite of cases bound to a specific prompt version.
+export interface AiPromptEvalSuite {
+  id: string
+  prompt_id: AiPromptId
+  prompt_version_id: AiPromptVersionId
+  description: string
+  pass_threshold: number         // min aggregate score for a case to pass (0..1)
+  cases: AiPromptEvalCase[]
+}
+
+// The aggregate outcome of running a suite (returned by the runner).
+export interface AiPromptEvalSuiteResult {
+  suite_id: string
+  prompt_id: AiPromptId
+  prompt_version_id: AiPromptVersionId
+  total: number
+  passed: number
+  failed: number
+  average_score: number
+  status: AiPromptEvalStatus     // passed only when every case passes
+  results: AiPromptEvalResult[]
+  ran_at: string
+}
+
 // Static routing decision derived from a prompt definition.
 export interface AiModelRoute {
   prompt_id: AiPromptId

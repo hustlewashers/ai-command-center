@@ -21,6 +21,7 @@ import { listAiAgents } from '@/lib/ai/agents'
 import { listAiPlans } from '@/lib/ai/plans'
 import { validateAiRegistry } from '@/lib/ai/registry-integrity'
 import { activeRequestSummaryChain } from '@/lib/ai/registry-graph'
+import { runAllPromptEvalSuites } from '@/lib/ai/evals/run'
 
 // Sprint 6.2 — AI Operations. RLS-safe reads only (SSR client, never service-role).
 export default async function AiOperationsPage() {
@@ -49,6 +50,7 @@ export default async function AiOperationsPage() {
   const aiPlans = listAiPlans()
   const integrity = validateAiRegistry()
   const stackChain = activeRequestSummaryChain()
+  const evalSuites = runAllPromptEvalSuites()
 
   const cards = [
     { label: 'Executions', value: String(summary.executions), color: '#2563eb' },
@@ -154,6 +156,43 @@ export default async function AiOperationsPage() {
             </span>
           ))}
         </div>
+      </div>
+
+      {/* Prompt Evaluation (Sprint 7.8) — offline, deterministic, read-only */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>Prompt Evaluation</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
+          Offline, deterministic evaluation of prompt versions against golden cases (no live provider, no writes).
+          <strong> A prompt version should not be activated until its eval suite passes.</strong> Moving a prompt&apos;s
+          <code> active_version</code> to a new version is a manual step gated on a passing suite — evaluation never
+          activates anything automatically.
+        </p>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>Suite</th><th style={s.th}>Prompt</th><th style={s.th}>Version</th>
+            <th style={s.th}>Cases</th><th style={s.th}>Passed</th><th style={s.th}>Failed</th>
+            <th style={s.th}>Avg Score</th><th style={s.th}>Status</th>
+          </tr></thead>
+          <tbody>
+            {evalSuites.map(su => (
+              <tr key={su.suite_id}>
+                <td style={s.td}><code>{su.suite_id}</code></td>
+                <td style={s.td}><code>{su.prompt_id}</code></td>
+                <td style={s.td}><code>{su.prompt_version_id}</code></td>
+                <td style={s.td}>{su.total}</td>
+                <td style={{ ...s.td, color: '#16a34a' }}>{su.passed}</td>
+                <td style={{ ...s.td, color: su.failed > 0 ? '#dc2626' : '#6b7280' }}>{su.failed}</td>
+                <td style={s.td}>{su.average_score.toFixed(2)}</td>
+                <td style={s.td}>
+                  <span style={{
+                    display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, color: '#fff',
+                    background: su.status === 'passed' ? '#16a34a' : su.status === 'partial' ? '#d97706' : '#dc2626',
+                  }}>{su.status}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Latest AI errors (Sprint 6.3) */}
