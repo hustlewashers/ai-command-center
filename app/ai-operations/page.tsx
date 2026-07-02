@@ -19,6 +19,8 @@ import { listAiCapabilities } from '@/lib/ai/capabilities'
 import { listAiSkills } from '@/lib/ai/skills'
 import { listAiAgents } from '@/lib/ai/agents'
 import { listAiPlans } from '@/lib/ai/plans'
+import { validateAiRegistry } from '@/lib/ai/registry-integrity'
+import { activeRequestSummaryChain } from '@/lib/ai/registry-graph'
 
 // Sprint 6.2 — AI Operations. RLS-safe reads only (SSR client, never service-role).
 export default async function AiOperationsPage() {
@@ -45,6 +47,8 @@ export default async function AiOperationsPage() {
   const aiSkills = listAiSkills()
   const aiAgents = listAiAgents()
   const aiPlans = listAiPlans()
+  const integrity = validateAiRegistry()
+  const stackChain = activeRequestSummaryChain()
 
   const cards = [
     { label: 'Executions', value: String(summary.executions), color: '#2563eb' },
@@ -73,6 +77,83 @@ export default async function AiOperationsPage() {
             <div style={s.cardLabel}>{c.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* AI Registry Integrity (Sprint 7.7) — read-only diagnostics */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Registry Integrity</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <span style={{
+            display: 'inline-block', padding: '3px 12px', borderRadius: 4, fontSize: 12, fontWeight: 700, color: '#fff',
+            background: integrity.ok ? '#16a34a' : '#dc2626',
+          }}>
+            {integrity.ok ? 'OK' : `${integrity.errors.length} error${integrity.errors.length !== 1 ? 's' : ''}`}
+          </span>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            checked {formatDate(integrity.checked_at)} · {integrity.warnings.length} warning{integrity.warnings.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 12 }}>
+          {integrity.counts.plans} plans · {integrity.counts.agents} agents · {integrity.counts.skills} skills ·{' '}
+          {integrity.counts.capabilities} capabilities · {integrity.counts.templates} templates ·{' '}
+          {integrity.counts.workflows} workflows · {integrity.counts.prompts} prompts ·{' '}
+          {integrity.counts.prompt_versions} prompt versions
+        </div>
+
+        {integrity.errors.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#16a34a', marginBottom: 12 }}>Registry integrity checks passed.</div>
+        ) : (
+          <table style={s.table}>
+            <thead><tr><th style={s.th}>Code</th><th style={s.th}>Source</th><th style={s.th}>Error</th></tr></thead>
+            <tbody>
+              {integrity.errors.map((e, i) => (
+                <tr key={i}>
+                  <td style={s.td}><code>{e.code}</code></td>
+                  <td style={s.td}><code style={{ fontSize: 11 }}>{e.from}</code></td>
+                  <td style={{ ...s.td, maxWidth: 520, wordBreak: 'break-word', color: '#dc2626' }}>{e.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {integrity.warnings.length > 0 && (
+          <>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '14px 0 6px' }}>Warnings ({integrity.warnings.length})</h3>
+            <table style={s.table}>
+              <thead><tr><th style={s.th}>Code</th><th style={s.th}>Source</th><th style={s.th}>Warning</th></tr></thead>
+              <tbody>
+                {integrity.warnings.map((w, i) => (
+                  <tr key={i}>
+                    <td style={s.td}><code>{w.code}</code></td>
+                    <td style={s.td}><code style={{ fontSize: 11 }}>{w.from}</code></td>
+                    <td style={{ ...s.td, maxWidth: 520, wordBreak: 'break-word', color: '#b45309' }}>{w.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
+
+      {/* AI Registry Stack Map (Sprint 7.7) — active request-summary golden path */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Registry Stack Map</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
+          The active request-summary chain, top to bottom: Plan → Agent → Skill → Capability → Template → Workflow → Prompt → Prompt Version.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 12 }}>
+          {stackChain.map((row, i) => (
+            <span key={row.kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', border: '1px solid #e5e7eb', borderRadius: 6, padding: '6px 10px', background: '#f9fafb' }}>
+                <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5, color: '#9ca3af' }}>{row.kind.replace('_', ' ')}</span>
+                <code style={{ fontSize: 12, color: row.id ? '#111827' : '#dc2626' }}>{row.id ?? 'MISSING'}</code>
+                {row.status && <span style={{ fontSize: 10, color: row.status === 'active' ? '#16a34a' : '#d97706' }}>{row.status}</span>}
+              </span>
+              {i < stackChain.length - 1 && <span style={{ color: '#9ca3af', fontWeight: 700 }}>→</span>}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Latest AI errors (Sprint 6.3) */}
