@@ -235,6 +235,94 @@ export interface AiValidationResult {
   errors: string[]
 }
 
+// ── Governed Retrieval / RAG Foundation (Sprint 8.1) ──
+// Read-only, org-scoped retrieval of entity-local context that a call_ai step may
+// use as BOUNDED SUPPLEMENTAL context. Retrieval writes no business records, never
+// crosses org boundaries, and never bypasses approvals. There is no vector DB yet —
+// retrieval reads existing tables through the same scoping the platform enforces.
+
+export type AiKnowledgeSourceId =
+  | 'requests' | 'tasks' | 'work_packets' | 'outputs' | 'decisions' | 'approvals'
+
+export type AiKnowledgeSourceType =
+  | 'request' | 'task' | 'work_packet' | 'output' | 'decision' | 'approval'
+
+export type AiKnowledgeSourceStatus = 'active' | 'planned' | 'disabled'
+
+// A retrievable source: which entity/table, which scopes it supports, which fields
+// are searchable, and which identify a citation. Metadata only — no query here.
+export interface AiKnowledgeSource {
+  id: AiKnowledgeSourceId
+  entity_type: AiKnowledgeSourceType
+  supported_scope: ('organization' | 'department' | 'project' | 'entity')[]
+  searchable_fields: string[]
+  citation_fields: string[]
+  status: AiKnowledgeSourceStatus
+}
+
+export type AiRetrievalPolicyId = 'entity_local_context_v1'
+export type AiRetrievalPolicyStatus = 'active' | 'planned' | 'disabled'
+
+// Declarative retrieval policy. The engine enforces these; nothing may loosen them.
+export interface AiRetrievalPolicy {
+  id: AiRetrievalPolicyId
+  description: string
+  same_org_only: boolean
+  prefer_same_department: boolean
+  prefer_same_project: boolean
+  entity_linked_only: boolean
+  max_chunks: number
+  forbid_secrets: boolean
+  forbid_global_search: boolean
+  status: AiRetrievalPolicyStatus
+}
+
+export interface AiRetrievalScope {
+  organization_id: string
+  department_id?: string | null
+  project_id?: string | null
+  entity_type?: AiKnowledgeSourceType
+  entity_id?: string | null
+}
+
+export type AiRetrievalStatus = 'ok' | 'empty' | 'skipped' | 'error' | 'policy_violation'
+
+export interface AiRetrievedChunk {
+  source_id: AiKnowledgeSourceId
+  entity_type: AiKnowledgeSourceType
+  entity_id: string
+  field: string
+  text: string
+  citation: string        // short label, e.g. 'task:ab12cd34'
+}
+
+export interface AiRetrievalCitation {
+  source_id: AiKnowledgeSourceId
+  entity_type: AiKnowledgeSourceType
+  entity_id: string
+  label: string
+}
+
+// Full result from the retrieval engine.
+export interface AiRetrievalResult {
+  status: AiRetrievalStatus
+  policy_id: AiRetrievalPolicyId
+  scope: AiRetrievalScope
+  chunks: AiRetrievedChunk[]
+  citations: AiRetrievalCitation[]
+  warnings: string[]
+}
+
+// The injectable, prompt-facing context derived from a result.
+export interface AiRetrievalContext {
+  policy_id: AiRetrievalPolicyId
+  status: AiRetrievalStatus
+  chunk_count: number
+  citations: AiRetrievalCitation[]
+  warnings: string[]
+  text: string            // bounded supplemental context block for the prompt
+}
+
 // ── AI Workflow Definition Layer (Sprint 7.0) ──
 // A coordination / read-model layer describing each governed AI workflow: which
 // prompt it uses, which runtime workflow (in lib/workflows/registry.ts) actually
@@ -688,4 +776,10 @@ export interface AiExecutionOutput {
   timeout_ms: number
   model_used: string
   error_type?: AiProviderErrorType     // last live error type when a fallback occurred
+  // Governed retrieval provenance (Sprint 8.1) — present only when retrieval opted in:
+  retrieval_policy_id?: AiRetrievalPolicyId
+  retrieval_status?: AiRetrievalStatus
+  retrieval_chunk_count?: number
+  retrieval_citations?: AiRetrievalCitation[]
+  retrieval_warnings?: string[]
 }

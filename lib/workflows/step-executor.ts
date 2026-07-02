@@ -232,7 +232,14 @@ export async function executeStep(
         else if (accumulated[k] !== undefined && accumulated[k] !== null) variables[k] = accumulated[k]
       }
 
-      const result = await executeCallAi(promptId, variables, ctx, step.id)
+      // Optional governed retrieval opt-in (Sprint 8.1) — additive, off by default.
+      const retrieveOn = step.params?.['retrieve'] === true
+      const retrieval = retrieveOn ? {
+        policy_id: (step.params?.['retrieval_policy_id'] as import('@/types/ai').AiRetrievalPolicyId | undefined) ?? 'entity_local_context_v1',
+        entity: (step.params?.['retrieval_entity'] as 'request' | 'work_packet' | undefined) ?? 'request',
+      } : undefined
+
+      const result = await executeCallAi(promptId, variables, ctx, step.id, retrieval)
       return {
         step_id: step.id,
         type:    step.type,
@@ -254,6 +261,13 @@ export async function executeStep(
           retry_count:          result.retry_count,           // Sprint 8.0
           model_used:           result.model_used,            // Sprint 8.0
           ...(result.error_type ? { error_type: result.error_type } : {}),
+          ...(result.retrieval_policy_id ? {              // Sprint 8.1
+            retrieval_policy_id:   result.retrieval_policy_id,
+            retrieval_status:      result.retrieval_status,
+            retrieval_chunk_count: result.retrieval_chunk_count,
+            retrieval_citations:   result.retrieval_citations,
+            retrieval_warnings:    result.retrieval_warnings,
+          } : {}),
         },
       }
     }

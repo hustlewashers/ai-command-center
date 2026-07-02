@@ -12,7 +12,10 @@ import {
   getRecentAiDraftOutputs,
   getRecentAiErrors,
   getAiProviderHealth,
+  getAiRetrievalUsage,
 } from '@/lib/ai/metrics'
+import { listKnowledgeSources } from '@/lib/ai/knowledge-sources'
+import { listRetrievalPolicies } from '@/lib/ai/retrieval-policies'
 import { listPrompts, listPromptVersions, getActivePromptVersion } from '@/lib/ai/prompts'
 import { listAiWorkflows } from '@/lib/ai/workflows'
 import { listAiWorkflowTemplates } from '@/lib/ai/workflow-templates'
@@ -34,14 +37,17 @@ export default async function AiOperationsPage() {
     redirect('/login')
   }
 
-  const [summary, logs, runs, outputs, errors, providerHealth] = await Promise.all([
+  const [summary, logs, runs, outputs, errors, providerHealth, retrievalUsage] = await Promise.all([
     getAiMetricSummary(supabase),
     getRecentAiExecutionLogs(supabase, 20),
     getRecentAiWorkflowRuns(supabase, 20),
     getRecentAiDraftOutputs(supabase, 20),
     getRecentAiErrors(supabase, 10),
     getAiProviderHealth(supabase),
+    getAiRetrievalUsage(supabase),
   ])
+  const knowledgeSources = listKnowledgeSources()
+  const retrievalPolicies = listRetrievalPolicies()
   const prompts = listPrompts()
   const promptVersions = listPromptVersions()
   const aiWorkflows = listAiWorkflows()
@@ -116,6 +122,70 @@ export default async function AiOperationsPage() {
           Derived from recent AI execution logs. In production, disable mock fallback (<code>AI_ALLOW_MOCK_FALLBACK=false</code>)
           so provider failures fail closed and appear here as failures rather than silent fallbacks.
         </p>
+      </div>
+
+      {/* AI Retrieval (Sprint 8.1) — governed, read-only foundation */}
+      <div style={ds.section}>
+        <h2 style={ds.h2}>AI Retrieval</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
+          Governed, org-scoped, read-only context injection. No cross-org or global search; retrieval writes nothing
+          and never bypasses approvals. If retrieval is empty or fails, the workflow continues without context.
+        </p>
+        <div style={s.cards}>
+          {[
+            { label: 'Runs w/ Retrieval', value: String(retrievalUsage.executions_with_retrieval), color: '#2563eb' },
+            { label: 'Total Chunks', value: String(retrievalUsage.total_chunks), color: '#0891b2' },
+            { label: 'Total Citations', value: String(retrievalUsage.total_citations), color: '#7c3aed' },
+            { label: 'Warnings', value: String(retrievalUsage.warning_count), color: retrievalUsage.warning_count > 0 ? '#d97706' : '#6b7280' },
+            { label: 'Last Retrieval', value: retrievalUsage.last_retrieval_at ? formatDate(retrievalUsage.last_retrieval_at) : '—', color: '#16a34a' },
+          ].map(c => (
+            <div key={c.label} style={s.card}>
+              <div style={{ ...s.cardVal, color: c.color, fontSize: 16 }}>{c.value}</div>
+              <div style={s.cardLabel}>{c.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '14px 0 6px' }}>Retrieval Policies ({retrievalPolicies.length})</h3>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>Policy ID</th><th style={s.th}>Same Org</th><th style={s.th}>Prefer Dept</th>
+            <th style={s.th}>Prefer Project</th><th style={s.th}>Max Chunks</th><th style={s.th}>Global Search</th><th style={s.th}>Status</th>
+          </tr></thead>
+          <tbody>
+            {retrievalPolicies.map(p => (
+              <tr key={p.id}>
+                <td style={s.td}><code>{p.id}</code></td>
+                <td style={s.td}>{p.same_org_only ? 'yes' : 'no'}</td>
+                <td style={s.td}>{p.prefer_same_department ? 'yes' : 'no'}</td>
+                <td style={s.td}>{p.prefer_same_project ? 'yes' : 'no'}</td>
+                <td style={s.td}>{p.max_chunks}</td>
+                <td style={s.td}>{p.forbid_global_search ? 'forbidden' : 'allowed'}</td>
+                <td style={s.td}><StatusBadge status={p.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: '#374151', margin: '14px 0 6px' }}>Knowledge Sources ({knowledgeSources.length})</h3>
+        <table style={s.table}>
+          <thead><tr>
+            <th style={s.th}>Source ID</th><th style={s.th}>Entity</th><th style={s.th}>Supported Scope</th>
+            <th style={s.th}>Searchable Fields</th><th style={s.th}>Citation Fields</th><th style={s.th}>Status</th>
+          </tr></thead>
+          <tbody>
+            {knowledgeSources.map(k => (
+              <tr key={k.id}>
+                <td style={s.td}><code>{k.id}</code></td>
+                <td style={s.td}><code>{k.entity_type}</code></td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{k.supported_scope.join(', ')}</code></td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{k.searchable_fields.join(', ')}</code></td>
+                <td style={s.td}><code style={{ fontSize: 11 }}>{k.citation_fields.join(', ')}</code></td>
+                <td style={s.td}><StatusBadge status={k.status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* AI Registry Integrity (Sprint 7.7) — read-only diagnostics */}

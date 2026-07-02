@@ -52,7 +52,8 @@ const WORKFLOWS: Record<string, WorkflowDefinition> = {
       {
         id:   'ai_summarize',
         type: 'call_ai',
-        params: { prompt_id: 'REQUEST_SUMMARIZER', input_keys: ['intent', 'title'] },
+        // Sprint 8.1 — opt in to governed, org-scoped local retrieval (non-fatal).
+        params: { prompt_id: 'REQUEST_SUMMARIZER', input_keys: ['intent', 'title'], retrieve: true, retrieval_policy_id: 'entity_local_context_v1', retrieval_entity: 'request' },
       },
       {
         id:   'create_summary_output',
@@ -87,7 +88,8 @@ const WORKFLOWS: Record<string, WorkflowDefinition> = {
       {
         id:   'ai_summarize',
         type: 'call_ai',
-        params: { prompt_id: 'WORK_PACKET_SUMMARIZER', input_keys: ['title', 'objective'] },
+        // Sprint 8.1 — opt in to governed, org-scoped local retrieval (non-fatal).
+        params: { prompt_id: 'WORK_PACKET_SUMMARIZER', input_keys: ['title', 'objective'], retrieve: true, retrieval_policy_id: 'entity_local_context_v1', retrieval_entity: 'work_packet' },
       },
       {
         id:   'create_summary_output',

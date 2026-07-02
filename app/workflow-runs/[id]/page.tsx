@@ -277,6 +277,12 @@ export default async function WorkflowRunDetailPage({
           { label: 'Retries', value: typeof op['retry_count'] === 'number' ? String(op['retry_count']) : '—' },
           ...(op['error_type'] ? [{ label: 'Error Type', value: <code style={{ color: '#dc2626' }}>{op['error_type'] as string}</code> }] as MetaItem[] : []),
           { label: 'Mocked', value: aiLogMeta['mocked'] === true || op['provider_id'] === 'mock' ? 'yes' : 'no' },
+          ...(op['retrieval_policy_id'] ? [
+            { label: 'Retrieval Policy', value: <code>{op['retrieval_policy_id'] as string}</code> },
+            { label: 'Retrieval Chunks', value: typeof op['retrieval_chunk_count'] === 'number' ? String(op['retrieval_chunk_count']) : '—' },
+            { label: 'Retrieval Citations', value: Array.isArray(op['retrieval_citations']) ? String((op['retrieval_citations'] as unknown[]).length) : '—' },
+            { label: 'Retrieval Warnings', value: Array.isArray(op['retrieval_warnings']) && (op['retrieval_warnings'] as unknown[]).length > 0 ? <span style={{ color: '#b45309' }}>{(op['retrieval_warnings'] as string[]).join('; ')}</span> : 'none' },
+          ] as MetaItem[] : []),
         ]
         return (
           <div key={step.id} style={s.section}>

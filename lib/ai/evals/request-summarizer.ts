@@ -76,6 +76,31 @@ export const REQUEST_SUMMARIZER_V1_SUITE: AiPromptEvalSuite = {
       expected_fields: ['title', 'summary', 'recommended_next_steps', 'risk_level', 'confidence'],
     },
     {
+      id: 'with_retrieval_context_low_risk',
+      description: 'Retrieval context present in input; candidate stays valid and grounded.',
+      input_payload: {
+        intent: 'Prepare the Q3 launch checklist for the mobile app.',
+        title: 'Q3 mobile launch checklist',
+        // Sprint 8.1 — bounded, org-scoped supplemental context (reference only).
+        retrieval_context: [
+          '- [task:ab12cd34] Task "Finalize mobile release notes" (in_progress)',
+          '- [output:99f0aa11] Output "Q2 launch retrospective" (report, delivered)',
+        ].join('\n'),
+      },
+      candidate_output: {
+        title: 'Q3 mobile app launch checklist',
+        summary: 'Request to prepare the Q3 mobile app launch checklist. Related in-progress release-notes work and the Q2 retrospective provide relevant context.',
+        recommended_next_steps: [
+          'Incorporate lessons from the Q2 launch retrospective',
+          'Align the checklist with the in-progress release notes',
+          'Confirm store submission timelines',
+        ],
+        risk_level: 'low',
+        confidence: 0.78,
+      },
+      expected_fields: ['title', 'summary', 'recommended_next_steps', 'risk_level', 'confidence'],
+    },
+    {
       id: 'minimal_intent_low_risk',
       description: 'Sparse intent still yields a valid, conservative draft.',
       input_payload: {

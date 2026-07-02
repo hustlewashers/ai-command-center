@@ -161,6 +161,49 @@ export async function getAiProviderHealth(supabase: SupabaseClient, sampleSize =
   }
 }
 
+export interface AiRetrievalUsage {
+  executions_with_retrieval: number
+  total_chunks: number
+  total_citations: number
+  warning_count: number
+  last_retrieval_at: string | null
+  policies_seen: string[]
+}
+
+// Sprint 8.1 — retrieval usage from AI execution logs (no new schema).
+export async function getAiRetrievalUsage(supabase: SupabaseClient, sampleSize = 200): Promise<AiRetrievalUsage> {
+  const { data } = await supabase.from('execution_logs')
+    .select('occurred_at, metadata')
+    .eq('actor', 'agent:ai')
+    .order('occurred_at', { ascending: false })
+    .limit(sampleSize)
+
+  const rows = (data ?? []) as { occurred_at: string; metadata: Record<string, unknown> | null }[]
+  let executions = 0, totalChunks = 0, totalCitations = 0, warningCount = 0
+  let lastAt: string | null = null
+  const policies = new Set<string>()
+
+  for (const r of rows) {
+    const m = r.metadata ?? {}
+    if (m['phase'] !== 'completed' || m['retrieval_policy_id'] === undefined) continue
+    executions++
+    if (!lastAt) lastAt = r.occurred_at
+    if (typeof m['retrieval_chunk_count'] === 'number') totalChunks += m['retrieval_chunk_count'] as number
+    if (Array.isArray(m['retrieval_citations'])) totalCitations += (m['retrieval_citations'] as unknown[]).length
+    if (Array.isArray(m['retrieval_warnings'])) warningCount += (m['retrieval_warnings'] as unknown[]).length
+    if (typeof m['retrieval_policy_id'] === 'string') policies.add(m['retrieval_policy_id'] as string)
+  }
+
+  return {
+    executions_with_retrieval: executions,
+    total_chunks: totalChunks,
+    total_citations: totalCitations,
+    warning_count: warningCount,
+    last_retrieval_at: lastAt,
+    policies_seen: [...policies],
+  }
+}
+
 export async function getRecentAiErrors(supabase: SupabaseClient, limit = 10): Promise<AiErrorRow[]> {
   const { data } = await supabase.from('execution_logs')
     .select('id, summary, occurred_at, metadata')
